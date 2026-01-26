@@ -216,14 +216,42 @@
       }
     }, true);
 
-    // Clean up on blur
+    // Clean up on blur (when urlbar loses focus)
     urlbarInput.addEventListener("blur", () => {
-      // Don't deactivate immediately, allow time for clicks
+      // Don't deactivate immediately, allow time for clicks on results
       setTimeout(() => {
-        if (document.activeElement !== urlbarInput) {
-          // deactivateLLMMode(urlbar, urlbarInput);
+        if (document.activeElement !== urlbarInput && isLLMMode) {
+          deactivateLLMMode(urlbar, urlbarInput);
         }
       }, 200);
+    });
+
+    // Listen for urlbar panel closing (when urlbar is not "floating" anymore)
+    const urlbarView = document.querySelector(".urlbarView");
+    if (urlbarView) {
+      // Watch for view panel closing/hiding
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          if (mutation.type === "attributes" && mutation.attributeName === "hidden") {
+            // Panel is now hidden
+            if (urlbarView.hidden && isLLMMode) {
+              deactivateLLMMode(urlbar, urlbarInput);
+            }
+          }
+        });
+      });
+      
+      observer.observe(urlbarView, {
+        attributes: true,
+        attributeFilter: ["hidden"]
+      });
+    }
+
+    // Also listen for when urlbar closes (unfocused state)
+    urlbar.addEventListener("DOMAttrModified", (e) => {
+      if (e.attrName === "open" && !urlbar.hasAttribute("open") && isLLMMode) {
+        deactivateLLMMode(urlbar, urlbarInput);
+      }
     });
   }
 
