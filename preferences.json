@@ -122,51 +122,6 @@
     ]
   },
   {
-    "property": "extension.urlbar-llm.gemini-api-key",
-    "label": "Gemini API Key",
-    "type": "string",
-    "placeholder": "Enter your Google Gemini API key",
-    "defaultValue": "",
-    "description": "Your personal API key from Google AI Studio. Required to use Gemini models.",
-    "conditions": [
-      {
-        "if": {
-          "property": "extension.urlbar-llm.enabled",
-          "value": true
-        }
-      }
-    ]
-  },
-  {
-    "property": "extension.urlbar-llm.gemini-model",
-    "label": "Gemini Model",
-    "type": "dropdown",
-    "defaultValue": "gemini-1.5-flash",
-    "description": "Select the Gemini model to use.",
-    "options": [
-      {
-        "value": "gemini-1.5-pro",
-        "label": "Gemini 1.5 Pro"
-      },
-      {
-        "value": "gemini-1.5-flash",
-        "label": "Gemini 1.5 Flash"
-      },
-      {
-        "value": "gemini-2.0-flash-exp",
-        "label": "Gemini 2.0 Flash (Experimental)"
-      }
-    ],
-    "conditions": [
-      {
-        "if": {
-          "property": "extension.urlbar-llm.enabled",
-          "value": true
-        }
-      }
-    ]
-  },
-  {
     "property": "extension.urlbar-llm.ollama-base-url",
     "label": "Ollama Base URL",
     "type": "string",

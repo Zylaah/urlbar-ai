@@ -36,13 +36,14 @@
         apiKey: null, // Not needed for local
         baseUrl: "http://localhost:11434/api/generate",
         model: "mistral"
-      },
-      gemini: {
-        name: "Google Gemini",
-        apiKey: "",
-        baseUrl: "https://generativelanguage.googleapis.com/v1/openai",
-        model: "gemini-1.5-flash"
       }
+      // Gemini temporarily disabled - OpenAI-compatible API not yet available
+      // gemini: {
+      //   name: "Google Gemini",
+      //   apiKey: "",
+      //   baseUrl: "https://generativelanguage.googleapis.com/v1/openai",
+      //   model: "gemini-1.5-flash"
+      // }
     },
     defaultProvider: "ollama"
   };
