@@ -40,7 +40,7 @@
       gemini: {
         name: "Google Gemini",
         apiKey: "",
-        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
+        baseUrl: "https://generativelanguage.googleapis.com/v1/openai",
         model: "gemini-1.5-flash"
       }
     },
