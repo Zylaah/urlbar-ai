@@ -426,23 +426,6 @@
       streamingResultRow = null;
     }
     
-    // Clear the query from input first
-    urlbarInput.value = "";
-    
-    // Then restore URL using Zen's native method (do this before visual changes)
-    if (window.gURLBar && restoreURL) {
-      try {
-        // Use setURI to restore the current page URL
-        if (window.gURLBar.setURI) {
-          window.gURLBar.setURI();
-        } else {
-          window.gURLBar.handleRevert();
-        }
-      } catch (e) {
-        console.warn("[URLBar LLM] URL restoration failed:", e);
-      }
-    }
-    
     // Remove visual indicators
     urlbar.removeAttribute("llm-mode-active");
     urlbar.removeAttribute("llm-provider");
@@ -469,6 +452,37 @@
       if (urlbarView) {
         urlbarView.style.display = "";
       }
+    }
+    
+    // Properly restore URL and clear input using Zen's native methods
+    if (window.gURLBar) {
+      try {
+        if (restoreURL) {
+          // Close the view first
+          if (window.gURLBar.view && window.gURLBar.view.close) {
+            window.gURLBar.view.close();
+          }
+          
+          // Restore the URL
+          window.gURLBar.handleRevert();
+          
+          // Update the internal value
+          if (window.gURLBar.value !== urlbarInput.value) {
+            urlbarInput.value = window.gURLBar.value;
+          }
+        } else {
+          // Just clear
+          urlbarInput.value = "";
+          if (window.gURLBar.value !== "") {
+            window.gURLBar.value = "";
+          }
+        }
+      } catch (e) {
+        console.warn("[URLBar LLM] Cleanup failed:", e);
+        urlbarInput.value = "";
+      }
+    } else {
+      urlbarInput.value = "";
     }
     
     console.log("[URLBar LLM] Deactivated");
