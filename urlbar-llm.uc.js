@@ -54,11 +54,14 @@
   let streamingResultRow = null;
   let abortController = null;
 
-  // Get preferences - Use XPCOMUtils which works reliably in Sine/fx-autoconfig
-  const { XPCOMUtils } = ChromeUtils.importESModule("resource://gre/modules/XPCOMUtils.sys.mjs");
-  const lazy = {};
-  XPCOMUtils.defineLazyServiceGetter(lazy, "prefs", "@mozilla.org/preferences-service;1", "nsIPrefBranch");
-  const Services = { prefs: lazy.prefs };
+  // Get preferences - Direct access to preference service using Components
+  const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
+    .getService(Components.interfaces.nsIPrefBranch);
+  
+  // Create a minimal Services-like object
+  const Services = {
+    prefs: prefsService
+  };
   
   function getPref(name, defaultValue) {
     try {
