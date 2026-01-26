@@ -465,8 +465,22 @@
       }
     }
     
-    // Focus input
-    urlbarInput.focus();
+    // Keep the urlbar open and focused
+    // Use setTimeout to ensure the action has finished processing
+    setTimeout(() => {
+      // Clear any search string from the action
+      urlbarInput.value = "";
+      currentQuery = "";
+      
+      // Focus and select all
+      urlbarInput.focus();
+      urlbarInput.select();
+      
+      // Ensure urlbar stays open
+      if (window.gURLBar) {
+        window.gURLBar.view.open();
+      }
+    }, 10);
     
     console.log(`[URLBar LLM] Activated with provider: ${providerKey}`);
   }
