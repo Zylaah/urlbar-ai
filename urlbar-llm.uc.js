@@ -40,7 +40,7 @@
       gemini: {
         name: "Google Gemini",
         apiKey: "",
-        baseUrl: "https://generativelanguage.googleapis.com/v1/models",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
         model: "gemini-1.5-flash"
       }
     },
@@ -719,7 +719,7 @@
   }
 
   async function streamGeminiResponse(query, titleElement, signal) {
-    const url = `${currentProvider.baseUrl}/${currentProvider.model}:streamGenerateContent?alt=sse&key=${currentProvider.apiKey}`;
+    const url = `${currentProvider.baseUrl}/${currentProvider.model}:streamGenerateContent?key=${currentProvider.apiKey}`;
     
     console.log(`[URLBar LLM] Gemini URL: ${url.replace(currentProvider.apiKey, 'API_KEY')}`);
     
@@ -758,13 +758,9 @@
       buffer = lines.pop();
 
       for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
-          if (data === "[DONE]") {
-            return;
-          }
+        if (line.trim()) {
           try {
-            const json = JSON.parse(data);
+            const json = JSON.parse(line);
             const candidates = json.candidates || [];
             for (const candidate of candidates) {
               const content = candidate.content;
@@ -779,7 +775,8 @@
               }
             }
           } catch (e) {
-            // Ignore parse errors
+            // Ignore parse errors during streaming
+            console.debug("[URLBar LLM] Gemini parse error:", e);
           }
         }
       }
