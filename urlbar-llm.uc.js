@@ -41,7 +41,7 @@
         name: "Google Gemini",
         apiKey: "",
         baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
-        model: "gemini-pro"
+        model: "gemini-1.5-flash"
       }
     },
     defaultProvider: "ollama"
@@ -719,7 +719,9 @@
   }
 
   async function streamGeminiResponse(query, titleElement, signal) {
-    const url = `${currentProvider.baseUrl}/${currentProvider.model}:streamGenerateContent?key=${currentProvider.apiKey}`;
+    const url = `${currentProvider.baseUrl}/${currentProvider.model}:streamGenerateContent?alt=sse&key=${currentProvider.apiKey}`;
+    
+    console.log(`[URLBar LLM] Gemini URL: ${url.replace(currentProvider.apiKey, 'API_KEY')}`);
     
     const response = await fetch(url, {
       method: "POST",
@@ -737,6 +739,8 @@
     });
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      console.error(`[URLBar LLM] Gemini error response:`, errorText);
       throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
     }
 
