@@ -451,12 +451,16 @@
       labelBox.textContent = "";
     }
     
-    // Restore placeholder
+    // Restore placeholder (always restore, not just when originalPlaceholder exists)
     if (originalPlaceholder) {
       urlbarInput.setAttribute("placeholder", originalPlaceholder);
     } else {
+      // If no original placeholder was saved, remove the custom one
       urlbarInput.removeAttribute("placeholder");
     }
+    
+    // Reset originalPlaceholder for next time
+    originalPlaceholder = "";
     
     // Show native suggestions again
     if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
@@ -488,6 +492,10 @@
           if (window.gURLBar.value !== "") {
             window.gURLBar.value = "";
           }
+          
+          // Trigger input event to restore suggestions
+          const inputEvent = new Event('input', { bubbles: true });
+          urlbarInput.dispatchEvent(inputEvent);
         }
       } catch (e) {
         console.warn("[URLBar LLM] Cleanup failed:", e);
