@@ -465,21 +465,34 @@
       }
     }
     
-    // Keep the urlbar open and focused
+    // Keep the urlbar open and focused in floating mode
     // Use setTimeout to ensure the action has finished processing
     setTimeout(() => {
       // Clear any search string from the action
       urlbarInput.value = "";
       currentQuery = "";
       
+      // Prevent the URL bar from closing
+      if (window.gURLBar) {
+        // Keep the view open
+        window.gURLBar.view.open();
+        
+        // Maintain the focused/floating state
+        urlbar.setAttribute("focused", "true");
+        
+        // Ensure breakout-extend attribute is set (Zen's floating mode)
+        if (urlbar.hasAttribute("breakout")) {
+          urlbar.setAttribute("breakout-extend", "true");
+        }
+      }
+      
       // Focus and select all
       urlbarInput.focus();
       urlbarInput.select();
       
-      // Ensure urlbar stays open
-      if (window.gURLBar) {
-        window.gURLBar.view.open();
-      }
+      // Trigger input event to keep the view alive
+      const event = new Event('input', { bubbles: true });
+      urlbarInput.dispatchEvent(event);
     }, 10);
     
     console.log(`[URLBar LLM] Activated with provider: ${providerKey}`);
