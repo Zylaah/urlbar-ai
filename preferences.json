@@ -1,0 +1,255 @@
+[
+  {
+    "property": "extension.urlbar-llm.enabled",
+    "label": "Enable URL Bar LLM",
+    "type": "checkbox",
+    "defaultValue": true,
+    "description": "Globally enables or disables the LLM integration in the URL bar."
+  },
+  {
+    "type": "separator",
+    "id": "urlbar-llm-api-separator",
+    "label": "API Configuration"
+  },
+  {
+    "property": "extension.urlbar-llm.mistral-api-key",
+    "label": "Mistral API Key",
+    "type": "string",
+    "placeholder": "Enter your Mistral AI API key",
+    "defaultValue": "",
+    "description": "Your personal API key from Mistral AI. Required to use Mistral models.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.mistral-model",
+    "label": "Mistral Model",
+    "type": "dropdown",
+    "defaultValue": "mistral-medium-latest",
+    "description": "Select the Mistral model to use.",
+    "options": [
+      {
+        "value": "mistral-large-latest",
+        "label": "Mistral Large Latest"
+      },
+      {
+        "value": "mistral-medium-latest",
+        "label": "Mistral Medium Latest"
+      },
+      {
+        "value": "mistral-small-latest",
+        "label": "Mistral Small Latest"
+      },
+      {
+        "value": "pixtral-12b-2409",
+        "label": "Pixtral 12B"
+      },
+      {
+        "value": "mistral-7b-instruct",
+        "label": "Mistral 7B Instruct"
+      }
+    ],
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.openai-api-key",
+    "label": "OpenAI API Key",
+    "type": "string",
+    "placeholder": "Enter your OpenAI API key",
+    "defaultValue": "",
+    "description": "Your personal API key from OpenAI. Required to use OpenAI models.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.openai-model",
+    "label": "OpenAI Model",
+    "type": "dropdown",
+    "defaultValue": "gpt-4",
+    "description": "Select the OpenAI model to use.",
+    "options": [
+      {
+        "value": "gpt-4o",
+        "label": "GPT-4o"
+      },
+      {
+        "value": "gpt-4-turbo",
+        "label": "GPT-4 Turbo"
+      },
+      {
+        "value": "gpt-4",
+        "label": "GPT-4"
+      },
+      {
+        "value": "gpt-3.5-turbo",
+        "label": "GPT-3.5 Turbo"
+      },
+      {
+        "value": "o1-preview",
+        "label": "O1 Preview"
+      },
+      {
+        "value": "o1-mini",
+        "label": "O1 Mini"
+      }
+    ],
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.gemini-api-key",
+    "label": "Gemini API Key",
+    "type": "string",
+    "placeholder": "Enter your Google Gemini API key",
+    "defaultValue": "",
+    "description": "Your personal API key from Google AI Studio. Required to use Gemini models.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.gemini-model",
+    "label": "Gemini Model",
+    "type": "dropdown",
+    "defaultValue": "gemini-pro",
+    "description": "Select the Gemini model to use.",
+    "options": [
+      {
+        "value": "gemini-2.0-flash-exp",
+        "label": "Gemini 2.0 Flash Experimental"
+      },
+      {
+        "value": "gemini-1.5-pro",
+        "label": "Gemini 1.5 Pro"
+      },
+      {
+        "value": "gemini-1.5-flash",
+        "label": "Gemini 1.5 Flash"
+      },
+      {
+        "value": "gemini-pro",
+        "label": "Gemini Pro"
+      }
+    ],
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.ollama-base-url",
+    "label": "Ollama Base URL",
+    "type": "string",
+    "placeholder": "http://localhost:11434/api",
+    "defaultValue": "http://localhost:11434/api",
+    "description": "The base URL for your local Ollama API. No API key required.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.ollama-model",
+    "label": "Ollama Model",
+    "type": "string",
+    "placeholder": "mistral",
+    "defaultValue": "mistral",
+    "description": "The Ollama model name to use (e.g., mistral, llama2, codellama).",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "type": "separator",
+    "id": "urlbar-llm-behavior-separator",
+    "label": "Behavior"
+  },
+  {
+    "property": "extension.urlbar-llm.hide-suggestions",
+    "label": "Hide Suggestions in LLM Mode",
+    "type": "checkbox",
+    "defaultValue": true,
+    "description": "Hides the autocomplete suggestions when LLM mode is active.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.animations-enabled",
+    "label": "Enable Animations",
+    "type": "checkbox",
+    "defaultValue": true,
+    "description": "Enables animations for the LLM interface (thinking indicator, etc.).",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.max-result-height",
+    "label": "Max Result Height (px)",
+    "type": "number",
+    "defaultValue": 300,
+    "description": "Maximum height of the streaming result in pixels before scrolling.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  }
+]
