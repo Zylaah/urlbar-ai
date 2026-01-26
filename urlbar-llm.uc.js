@@ -267,17 +267,58 @@
     urlbar.setAttribute("llm-hint", provider.name);
   }
 
-  // Simple markdown to HTML converter
-  function parseMarkdown(text) {
-    if (!text) return "";
+  // Render markdown as DOM elements (avoids XHTML parsing issues)
+  function renderMarkdownToElement(text, element) {
+    if (!text) {
+      element.textContent = "";
+      return;
+    }
     
-    let html = text;
+    // Clear existing content
+    element.textContent = "";
     
-    // Code blocks (```lang ... ```)
-    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-      const language = lang ? ` class="language-${lang}"` : '';
-      return `<pre><code${language}>${escapeHtml(code.trim())}</code></pre>`;
-    });
+    // Split by code blocks first to handle them separately
+    const parts = [];
+    let lastIndex = 0;
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    let match;
+    
+    while ((match = codeBlockRegex.exec(text)) !== null) {
+      // Add text before code block
+      if (match.index > lastIndex) {
+        parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+      }
+      // Add code block
+      parts.push({ type: 'code', lang: match[1], content: match[2] });
+      lastIndex = match.index + match[0].length;
+    }
+    // Add remaining text
+    if (lastIndex < text.length) {
+      parts.push({ type: 'text', content: text.slice(lastIndex) });
+    }
+    
+    // Render each part
+    for (const part of parts) {
+      if (part.type === 'code') {
+        const pre = document.createElement('pre');
+        const code = document.createElement('code');
+        if (part.lang) {
+          code.className = `language-${part.lang}`;
+        }
+        code.textContent = part.content.trim();
+        pre.appendChild(code);
+        element.appendChild(pre);
+      } else {
+        // Parse inline markdown in text
+        const span = document.createElement('span');
+        span.innerHTML = parseInlineMarkdown(part.content);
+        element.appendChild(span);
+      }
+    }
+  }
+  
+  function parseInlineMarkdown(text) {
+    let html = escapeHtml(text);
     
     // Inline code (`code`)
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
@@ -295,26 +336,27 @@
     html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
     html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
     
-    // Lists (- item or * item or 1. item)
+    // Lists (- item or * item)
     html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
     html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
-    
-    // Wrap consecutive <li> in <ul>
-    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
+    html = html.replace(/(<li>[\s\S]*?<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
     
     // Links [text](url)
-    html = html.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    html = html.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
     
-    // Line breaks (preserve them)
-    html = html.replace(/\n/g, '<br>');
+    // Line breaks
+    html = html.replace(/\n/g, '<br/>');
     
     return html;
   }
 
   function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   function activateLLMMode(urlbar, urlbarInput, providerKey) {
@@ -586,7 +628,7 @@
             const delta = json.choices?.[0]?.delta?.content;
             if (delta) {
               accumulatedText += delta;
-              titleElement.innerHTML = parseMarkdown(accumulatedText);
+              renderMarkdownToElement(accumulatedText, titleElement);
               // Auto-scroll to bottom
               titleElement.scrollTop = titleElement.scrollHeight;
             }
@@ -636,7 +678,7 @@
             const delta = json.response;
             if (delta) {
               accumulatedText += delta;
-              titleElement.innerHTML = parseMarkdown(accumulatedText);
+              renderMarkdownToElement(accumulatedText, titleElement);
               titleElement.scrollTop = titleElement.scrollHeight;
             }
             if (json.done) {
@@ -700,7 +742,7 @@
                 for (const part of content.parts) {
                   if (part.text) {
                     accumulatedText += part.text;
-                    titleElement.innerHTML = parseMarkdown(accumulatedText);
+                    renderMarkdownToElement(accumulatedText, titleElement);
                     titleElement.scrollTop = titleElement.scrollHeight;
                   }
                 }
