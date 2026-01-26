@@ -5,33 +5,32 @@
  * @import "js/urlbar-llm.css";
  */
 
-/* LLM Mode Active - Native Zen pill styling */
+/* LLM Mode Active - Use native Zen #urlbar-label-box styling */
 #urlbar[llm-mode-active="true"] #urlbar-label-box {
-  background-color: var(--urlbar-box-bgcolor);
-  color: var(--urlbar-box-text-color);
-  padding-inline: 8px;
-  border-radius: var(--urlbar-inner-border-radius);
+  /* Zen's native pill styling from zen-omnibox.css */
+  background-color: color-mix(in srgb, var(--zen-primary-color) 50%, light-dark(rgba(0, 0, 0, 0.5), rgba(255, 255, 255, 0.2)) 50%) !important;
+  color: white !important;
+  padding: 4px 8px !important;
+  border-radius: 50px !important;
+  font-size: 14px !important;
+  display: inline-block !important;
 }
 
-/* Provider-specific pill colors using native Zen variables */
+/* Provider-specific pill colors */
 #urlbar[llm-provider="mistral"] #urlbar-label-box {
-  background: linear-gradient(135deg, #ff7000 0%, #ff9a00 100%);
-  color: white;
+  background: linear-gradient(135deg, #ff7000 0%, #ff9a00 100%) !important;
 }
 
 #urlbar[llm-provider="openai"] #urlbar-label-box {
-  background: linear-gradient(135deg, #10a37f 0%, #1a7f64 100%);
-  color: white;
+  background: linear-gradient(135deg, #10a37f 0%, #1a7f64 100%) !important;
 }
 
 #urlbar[llm-provider="gemini"] #urlbar-label-box {
-  background: linear-gradient(135deg, #4285f4 0%, #0f9d58 100%);
-  color: white;
+  background: linear-gradient(135deg, #4285f4 0%, #0f9d58 100%) !important;
 }
 
 #urlbar[llm-provider="ollama"] #urlbar-label-box {
-  background: linear-gradient(135deg, #000000 0%, #434343 100%);
-  color: white;
+  background: linear-gradient(135deg, #000000 0%, #434343 100%) !important;
 }
 
 /* Hide suggestions when in LLM mode - controlled by preference */
@@ -43,11 +42,7 @@
 
 /* LLM Result Row Styling - Use native Zen styling */
 .urlbarView-row-llm {
-  /* No custom background or borders - use native */
-}
-
-.urlbarView-row-llm:hover {
-  /* Let native hover styles apply */
+  /* Use native Zen row styling */
 }
 
 /* Hide the icon */
@@ -55,27 +50,29 @@
   display: none !important;
 }
 
-/* Remove custom padding - use native */
+/* Allow text wrapping - override the no-wrap behavior */
 .urlbarView-row-llm .urlbarView-row-inner {
-  padding: 0;
+  display: block !important;
+  white-space: normal !important;
 }
 
-/* Response text should fill width and be scrollable via parent */
 .urlbarView-row-llm .urlbarView-no-wrap {
-  width: 100%;
-  overflow: visible;
+  white-space: normal !important;
+  display: block !important;
 }
 
 .urlbarView-row-llm .urlbarView-title {
-  white-space: pre-wrap;
-  word-break: break-word;
-  overflow: visible;
-  max-height: none;
+  white-space: pre-wrap !important;
+  word-wrap: break-word !important;
+  overflow-wrap: break-word !important;
+  /* Use Zen's native title styling */
+  font-size: 14px !important;
+  font-weight: 500 !important;
 }
 
-/* Theme-aware text color */
-html[zen-should-be-dark-mode="true"] .urlbarView-row-llm .urlbarView-title {
-  color: var(--urlbar-text-color, #fff);
+/* Theme-aware text color using Zen's styling */
+.urlbarView-row-llm .urlbarView-title {
+  color: light-dark(rgba(0, 0, 0, 0.7), rgba(255, 255, 255, 0.7)) !important;
 }
 
 /* Hide other suggestions when LLM result is shown */

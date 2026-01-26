@@ -246,24 +246,26 @@
     urlbar.setAttribute("llm-mode-active", "true");
     urlbar.setAttribute("llm-provider", providerKey);
     
-    // Create native Zen pill using urlbar-label-box
-    let labelBox = urlbar.querySelector("#urlbar-label-box");
+    // Use the native Zen #urlbar-label-box if it exists, or create it
+    let labelBox = document.getElementById("urlbar-label-box");
     if (!labelBox) {
-      // Create label box if it doesn't exist
-      labelBox = document.createXULElement("label");
+      // Create the label box element
+      labelBox = document.createXULElement ? 
+        document.createXULElement("label") : 
+        document.createElement("label");
       labelBox.id = "urlbar-label-box";
-      labelBox.classList.add("urlbar-label-box");
       
-      // Insert before the input
+      // Insert it in the urlbar (before the input container)
       const inputContainer = urlbar.querySelector(".urlbar-input-container");
-      if (inputContainer) {
-        inputContainer.insertBefore(labelBox, inputContainer.firstChild);
+      if (inputContainer && inputContainer.parentNode) {
+        inputContainer.parentNode.insertBefore(labelBox, inputContainer);
       }
     }
     
-    // Set provider name in label
+    // Set provider name and show
     labelBox.textContent = currentProvider.name;
-    labelBox.style.display = "";
+    labelBox.hidden = false;
+    labelBox.style.display = "inline-block";
     
     // Hide native suggestions if preference enabled
     if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
@@ -290,8 +292,9 @@
     urlbar.removeAttribute("llm-hint");
     
     // Hide pill
-    const labelBox = urlbar.querySelector("#urlbar-label-box");
+    const labelBox = document.getElementById("urlbar-label-box");
     if (labelBox) {
+      labelBox.hidden = true;
       labelBox.style.display = "none";
       labelBox.textContent = "";
     }
