@@ -167,46 +167,51 @@
   // Register LLM actions with Zen's global actions system
   function registerZenActions() {
     try {
-      // Access Zen's global actions array
-      const { ZenUrlbarProviderGlobalActions } = ChromeUtils.importESModule(
-        "resource:///modules/ZenUBGlobalActions.sys.mjs"
-      );
-      
-      if (!ZenUrlbarProviderGlobalActions) {
-        console.warn("[URLBar LLM] Could not access Zen actions, using fallback");
-        return;
-      }
-
-      // Get the global actions array
       const globalActionsModule = ChromeUtils.importESModule(
         "resource:///modules/ZenUBGlobalActions.sys.mjs"
       );
       
-      if (!globalActionsModule.globalActions) {
-        console.warn("[URLBar LLM] Could not access globalActions array");
+      console.log("[URLBar LLM] Module loaded:", !!globalActionsModule);
+      console.log("[URLBar LLM] globalActions exists:", !!globalActionsModule.globalActions);
+      console.log("[URLBar LLM] globalActions length:", globalActionsModule.globalActions?.length);
+      
+      if (!globalActionsModule || !globalActionsModule.globalActions) {
+        console.warn("[URLBar LLM] Could not access globalActions");
         return;
       }
 
-      // Add LLM provider actions
-      const llmActions = Object.entries(CONFIG.providers).map(([key, provider]) => ({
-        label: `Chat with ${provider.name}`,
-        command: () => {
-          const urlbar = document.getElementById("urlbar");
-          const urlbarInput = urlbar.querySelector("#urlbar-input");
-          activateLLMMode(urlbar, urlbarInput, key);
-        },
-        commandId: `zen:llm-${key}`,
-        icon: "chrome://browser/skin/search-glass.svg",
-        isAvailable: () => true
-      }));
+      // Create LLM provider actions
+      const llmActions = Object.entries(CONFIG.providers).map(([key, provider]) => {
+        const action = {
+          label: `Chat with ${provider.name}`,
+          command: (window) => {
+            const urlbar = window.document.getElementById("urlbar");
+            const urlbarInput = urlbar?.querySelector("#urlbar-input");
+            if (urlbar && urlbarInput) {
+              activateLLMMode(urlbar, urlbarInput, key);
+            }
+          },
+          commandId: `zen:llm-chat-${key}`,
+          icon: "chrome://browser/skin/search-glass.svg",
+          isAvailable: () => true,
+          extraPayload: {}
+        };
+        console.log("[URLBar LLM] Created action:", action.label, action.commandId);
+        return action;
+      });
 
-      // Add actions to global array
+      // Try to add to the array
+      const initialLength = globalActionsModule.globalActions.length;
       globalActionsModule.globalActions.push(...llmActions);
+      const newLength = globalActionsModule.globalActions.length;
       
-      console.log("[URLBar LLM] Registered Zen actions:", llmActions.length);
+      console.log("[URLBar LLM] Actions array before:", initialLength);
+      console.log("[URLBar LLM] Actions array after:", newLength);
+      console.log("[URLBar LLM] Successfully added:", newLength - initialLength, "actions");
+      
     } catch (e) {
-      console.warn("[URLBar LLM] Failed to register Zen actions:", e);
-      console.log("[URLBar LLM] Fallback: @provider syntax still works");
+      console.error("[URLBar LLM] Failed to register Zen actions:", e);
+      console.error("[URLBar LLM] Stack:", e.stack);
     }
   }
 
