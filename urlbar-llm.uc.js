@@ -329,8 +329,12 @@
     html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/__([^_]+?)__/g, '<strong>$1</strong>');
     
-    // Skip italic formatting to avoid XML parsing errors
-    // Italic syntax conflicts with bold and causes mismatched tags
+    // Italic (*text* or _text_) - only match complete pairs
+    // Use word boundaries to avoid matching partial bold syntax
+    // Only match if there's a complete opening and closing marker
+    html = html.replace(/\b_([^_<>]+?)_\b/g, '<em>$1</em>');
+    // For asterisk, make sure it's not part of bold (not preceded/followed by another *)
+    html = html.replace(/(?<![*\\])\*([^*<>\s][^*<>]*?)\*(?![*])/g, '<em>$1</em>');
     
     // Headers (# Header) - must be in order from most # to least
     html = html.replace(/^###### (.+)$/gm, '<h6>$1</h6>');
