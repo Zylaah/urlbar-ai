@@ -40,7 +40,7 @@
       gemini: {
         name: "Google Gemini",
         apiKey: "",
-        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai",
         model: "gemini-1.5-flash"
       }
     },
@@ -607,7 +607,12 @@
   }
 
   async function streamOpenAIResponse(query, titleElement, signal) {
-    const response = await fetch(currentProvider.baseUrl, {
+    // Add /chat/completions if not already in the URL
+    const url = currentProvider.baseUrl.endsWith('/chat/completions') 
+      ? currentProvider.baseUrl 
+      : `${currentProvider.baseUrl}/chat/completions`;
+    
+    const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
