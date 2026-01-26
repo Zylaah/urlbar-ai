@@ -1,9 +1,9 @@
 {
   "id": "urlbar-llm",
-  "homepage": "https://github.com/yourusername/urlbar-llm",
+  "homepage": "https://github.com/Zylaah/urlbar-ai",
   "name": "URL Bar LLM",
   "description": "Add AI-powered LLM chat directly in the URL bar. Type @provider + Tab to activate, then chat with Mistral, OpenAI, Gemini, or local Ollama models. Responses stream in real-time in the suggestions dropdown.",
-  "author": "Your Name",
+  "author": "Zylaah",
   "version": "1.0.0",
   "updatedAt": "2026-01-26",
   "tags": [
@@ -32,6 +32,6 @@
       ]
     }
   },
-  "readme": "https://raw.githubusercontent.com/yourusername/urlbar-llm/main/README.md",
+  "readme": "https://raw.githubusercontent.com/Zylaah/urlbar-ai/main/README.md",
   "createdAt": "2026-01-26"
 }
