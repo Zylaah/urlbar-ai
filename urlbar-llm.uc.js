@@ -223,7 +223,8 @@
         deactivateLLMMode(urlbar, urlbarInput, true);
       } else if ((e.key === "Delete" || e.key === "Backspace") && isLLMMode) {
         // Exit LLM mode if input is empty and user presses Delete/Backspace
-        if (!inputValue || inputValue.trim() === "") {
+        const currentValue = urlbarInput.value || "";
+        if (currentValue.trim() === "") {
           e.preventDefault();
           e.stopPropagation();
           deactivateLLMMode(urlbar, urlbarInput, false);
@@ -420,35 +421,8 @@
       }
     }
     
-    // Keep the urlbar open and focused in floating mode
-    // Use setTimeout to ensure the action has finished processing
-    setTimeout(() => {
-      // Clear any search string from the action
-      urlbarInput.value = "";
-      currentQuery = "";
-      
-      // Prevent the URL bar from closing
-      if (window.gURLBar) {
-        // Keep the view open
-        window.gURLBar.view.open();
-        
-        // Maintain the focused/floating state
-        urlbar.setAttribute("focused", "true");
-        
-        // Ensure breakout-extend attribute is set (Zen's floating mode)
-        if (urlbar.hasAttribute("breakout")) {
-          urlbar.setAttribute("breakout-extend", "true");
-        }
-      }
-      
-      // Focus and select all
-      urlbarInput.focus();
-      urlbarInput.select();
-      
-      // Trigger input event to keep the view alive
-      const event = new Event('input', { bubbles: true });
-      urlbarInput.dispatchEvent(event);
-    }, 10);
+    // Focus input
+    urlbarInput.focus();
     
     console.log(`[URLBar LLM] Activated with provider: ${providerKey}`);
   }
