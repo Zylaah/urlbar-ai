@@ -80,6 +80,78 @@
   display: none !important;
 }
 
+/* Markdown formatting styles */
+.urlbarView-row-llm .urlbarView-title code {
+  background-color: color-mix(in srgb, var(--zen-primary-color) 10%, transparent 90%);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: "Cascadia Code", "Fira Code", "Monaco", "Consolas", monospace;
+  font-size: 13px;
+}
+
+.urlbarView-row-llm .urlbarView-title pre {
+  background-color: color-mix(in srgb, var(--zen-primary-color) 10%, transparent 90%);
+  padding: 12px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 8px 0;
+}
+
+.urlbarView-row-llm .urlbarView-title pre code {
+  background-color: transparent;
+  padding: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.urlbarView-row-llm .urlbarView-title strong {
+  font-weight: 600;
+  color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.9));
+}
+
+.urlbarView-row-llm .urlbarView-title em {
+  font-style: italic;
+}
+
+.urlbarView-row-llm .urlbarView-title h1,
+.urlbarView-row-llm .urlbarView-title h2,
+.urlbarView-row-llm .urlbarView-title h3 {
+  font-weight: 600;
+  margin: 8px 0 4px 0;
+  color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.9));
+}
+
+.urlbarView-row-llm .urlbarView-title h1 {
+  font-size: 18px;
+}
+
+.urlbarView-row-llm .urlbarView-title h2 {
+  font-size: 16px;
+}
+
+.urlbarView-row-llm .urlbarView-title h3 {
+  font-size: 15px;
+}
+
+.urlbarView-row-llm .urlbarView-title ul {
+  margin: 8px 0;
+  padding-left: 20px;
+  list-style-type: disc;
+}
+
+.urlbarView-row-llm .urlbarView-title li {
+  margin: 4px 0;
+}
+
+.urlbarView-row-llm .urlbarView-title a {
+  color: var(--zen-primary-color);
+  text-decoration: none;
+}
+
+.urlbarView-row-llm .urlbarView-title a:hover {
+  text-decoration: underline;
+}
+
 /* Thinking/Streaming Indicator - Only if animations enabled */
 @media -moz-pref("extension.urlbar-llm.animations-enabled") {
   #urlbar[is-llm-thinking="true"] .urlbar-input-container::after {

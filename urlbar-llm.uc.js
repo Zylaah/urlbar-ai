@@ -267,6 +267,56 @@
     urlbar.setAttribute("llm-hint", provider.name);
   }
 
+  // Simple markdown to HTML converter
+  function parseMarkdown(text) {
+    if (!text) return "";
+    
+    let html = text;
+    
+    // Code blocks (```lang ... ```)
+    html = html.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
+      const language = lang ? ` class="language-${lang}"` : '';
+      return `<pre><code${language}>${escapeHtml(code.trim())}</code></pre>`;
+    });
+    
+    // Inline code (`code`)
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // Bold (**text** or __text__)
+    html = html.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    
+    // Italic (*text* or _text_)
+    html = html.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
+    html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+    
+    // Headers (# Header)
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    
+    // Lists (- item or * item or 1. item)
+    html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
+    
+    // Wrap consecutive <li> in <ul>
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
+    
+    // Links [text](url)
+    html = html.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, '<a href="$2" target="_blank">$1</a>');
+    
+    // Line breaks (preserve them)
+    html = html.replace(/\n/g, '<br>');
+    
+    return html;
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
   function activateLLMMode(urlbar, urlbarInput, providerKey) {
     isLLMMode = true;
     currentProvider = CONFIG.providers[providerKey];
@@ -301,6 +351,9 @@
     labelBox.hidden = false;
     labelBox.style.display = "inline-block";
     
+    // Change placeholder text
+    urlbarInput.setAttribute("placeholder", "Ask anything...");
+    
     // Hide native suggestions if preference enabled
     if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
       const urlbarView = document.querySelector(".urlbarView");
@@ -332,6 +385,9 @@
       labelBox.style.display = "none";
       labelBox.textContent = "";
     }
+    
+    // Restore placeholder
+    urlbarInput.removeAttribute("placeholder");
     
     // Show native suggestions again
     if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
@@ -530,7 +586,7 @@
             const delta = json.choices?.[0]?.delta?.content;
             if (delta) {
               accumulatedText += delta;
-              titleElement.textContent = accumulatedText;
+              titleElement.innerHTML = parseMarkdown(accumulatedText);
               // Auto-scroll to bottom
               titleElement.scrollTop = titleElement.scrollHeight;
             }
@@ -580,7 +636,7 @@
             const delta = json.response;
             if (delta) {
               accumulatedText += delta;
-              titleElement.textContent = accumulatedText;
+              titleElement.innerHTML = parseMarkdown(accumulatedText);
               titleElement.scrollTop = titleElement.scrollHeight;
             }
             if (json.done) {
@@ -644,7 +700,7 @@
                 for (const part of content.parts) {
                   if (part.text) {
                     accumulatedText += part.text;
-                    titleElement.textContent = accumulatedText;
+                    titleElement.innerHTML = parseMarkdown(accumulatedText);
                     titleElement.scrollTop = titleElement.scrollHeight;
                   }
                 }
