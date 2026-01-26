@@ -228,7 +228,7 @@
       // Don't deactivate immediately, allow time for clicks on results
       setTimeout(() => {
         if (document.activeElement !== urlbarInput && isLLMMode) {
-          deactivateLLMMode(urlbar, urlbarInput, false);
+          deactivateLLMMode(urlbar, urlbarInput, true);
         }
       }, 200);
     });
@@ -242,7 +242,7 @@
           if (mutation.type === "attributes" && mutation.attributeName === "hidden") {
             // Panel is now hidden
             if (urlbarView.hidden && isLLMMode) {
-              deactivateLLMMode(urlbar, urlbarInput, false);
+              deactivateLLMMode(urlbar, urlbarInput, true);
             }
           }
         });
@@ -257,7 +257,7 @@
     // Also listen for when urlbar closes (unfocused state)
     urlbar.addEventListener("DOMAttrModified", (e) => {
       if (e.attrName === "open" && !urlbar.hasAttribute("open") && isLLMMode) {
-        deactivateLLMMode(urlbar, urlbarInput, false);
+        deactivateLLMMode(urlbar, urlbarInput, true);
       }
     });
   }
@@ -332,7 +332,10 @@
     html = html.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
     html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
     
-    // Headers (# Header)
+    // Headers (# Header) - must be in order from most # to least
+    html = html.replace(/^###### (.+)$/gm, '<h6>$1</h6>');
+    html = html.replace(/^##### (.+)$/gm, '<h5>$1</h5>');
+    html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
     html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
     html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
     html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');

@@ -115,7 +115,10 @@
 
 .urlbarView-row-llm .urlbarView-title h1,
 .urlbarView-row-llm .urlbarView-title h2,
-.urlbarView-row-llm .urlbarView-title h3 {
+.urlbarView-row-llm .urlbarView-title h3,
+.urlbarView-row-llm .urlbarView-title h4,
+.urlbarView-row-llm .urlbarView-title h5,
+.urlbarView-row-llm .urlbarView-title h6 {
   font-weight: 600;
   margin: 4px 0 2px 0;
   color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.9));
@@ -131,6 +134,18 @@
 
 .urlbarView-row-llm .urlbarView-title h3 {
   font-size: 14px;
+}
+
+.urlbarView-row-llm .urlbarView-title h4 {
+  font-size: 14px;
+}
+
+.urlbarView-row-llm .urlbarView-title h5 {
+  font-size: 13px;
+}
+
+.urlbarView-row-llm .urlbarView-title h6 {
+  font-size: 13px;
 }
 
 .urlbarView-row-llm .urlbarView-title ul {
