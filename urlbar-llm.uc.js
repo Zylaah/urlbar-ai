@@ -40,8 +40,8 @@
       gemini: {
         name: "Google Gemini",
         apiKey: "",
-        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-        model: "gemini-1.5-flash-latest"
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+        model: "gemini-1.5-flash"
       }
     },
     defaultProvider: "ollama"
@@ -589,11 +589,8 @@
       if (currentProvider.name === "Ollama (Local)") {
         // Ollama uses different API format
         await streamOllamaResponse(query, titleElement, abortController.signal);
-      } else if (currentProvider.name === "Google Gemini") {
-        // Gemini uses different API format
-        await streamGeminiResponse(query, titleElement, abortController.signal);
       } else {
-        // Standard OpenAI-compatible API
+        // Standard OpenAI-compatible API (works for OpenAI, Mistral, Gemini)
         await streamOpenAIResponse(query, titleElement, abortController.signal);
       }
 

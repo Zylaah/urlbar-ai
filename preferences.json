@@ -141,20 +141,20 @@
     "property": "extension.urlbar-llm.gemini-model",
     "label": "Gemini Model",
     "type": "dropdown",
-    "defaultValue": "gemini-1.5-flash-latest",
+    "defaultValue": "gemini-1.5-flash",
     "description": "Select the Gemini model to use.",
     "options": [
       {
-        "value": "gemini-1.5-pro-latest",
-        "label": "Gemini 1.5 Pro Latest"
+        "value": "gemini-1.5-pro",
+        "label": "Gemini 1.5 Pro"
       },
       {
-        "value": "gemini-1.5-flash-latest",
-        "label": "Gemini 1.5 Flash Latest"
+        "value": "gemini-1.5-flash",
+        "label": "Gemini 1.5 Flash"
       },
       {
-        "value": "gemini-pro",
-        "label": "Gemini Pro (Legacy)"
+        "value": "gemini-2.0-flash-exp",
+        "label": "Gemini 2.0 Flash (Experimental)"
       }
     ],
     "conditions": [
