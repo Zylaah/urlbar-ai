@@ -208,11 +208,17 @@
         e.stopPropagation();
         
         // Send query to LLM
-        sendToLLM(urlbar, urlbarInput, currentQuery);
+        const query = currentQuery;
+        if (query.trim()) {
+          // Clear the input immediately after sending
+          currentQuery = "";
+          urlbarInput.value = "";
+          sendToLLM(urlbar, urlbarInput, query);
+        }
       } else if (e.key === "Escape" && isLLMMode) {
         e.preventDefault();
         e.stopPropagation();
-        deactivateLLMMode(urlbar, urlbarInput);
+        deactivateLLMMode(urlbar, urlbarInput, true);
       }
     }, true);
 
@@ -221,7 +227,7 @@
       // Don't deactivate immediately, allow time for clicks on results
       setTimeout(() => {
         if (document.activeElement !== urlbarInput && isLLMMode) {
-          deactivateLLMMode(urlbar, urlbarInput);
+          deactivateLLMMode(urlbar, urlbarInput, false);
         }
       }, 200);
     });
@@ -235,7 +241,7 @@
           if (mutation.type === "attributes" && mutation.attributeName === "hidden") {
             // Panel is now hidden
             if (urlbarView.hidden && isLLMMode) {
-              deactivateLLMMode(urlbar, urlbarInput);
+              deactivateLLMMode(urlbar, urlbarInput, false);
             }
           }
         });
@@ -250,7 +256,7 @@
     // Also listen for when urlbar closes (unfocused state)
     urlbar.addEventListener("DOMAttrModified", (e) => {
       if (e.attrName === "open" && !urlbar.hasAttribute("open") && isLLMMode) {
-        deactivateLLMMode(urlbar, urlbarInput);
+        deactivateLLMMode(urlbar, urlbarInput, false);
       }
     });
   }
@@ -309,7 +315,7 @@
     console.log(`[URLBar LLM] Activated with provider: ${providerKey}`);
   }
 
-  function deactivateLLMMode(urlbar, urlbarInput) {
+  function deactivateLLMMode(urlbar, urlbarInput, restoreURL = false) {
     isLLMMode = false;
     currentProvider = null;
     currentQuery = "";
@@ -341,8 +347,18 @@
       streamingResultRow = null;
     }
     
-    // Clear input
-    urlbarInput.value = "";
+    // Restore URL if requested (on Escape) using Zen's native method
+    if (restoreURL && window.gURLBar) {
+      try {
+        window.gURLBar.handleRevert();
+      } catch (e) {
+        // Fallback: just clear the input
+        urlbarInput.value = "";
+      }
+    } else {
+      // Otherwise just clear input
+      urlbarInput.value = "";
+    }
     
     console.log("[URLBar LLM] Deactivated");
   }
