@@ -321,16 +321,15 @@
   function parseInlineMarkdown(text) {
     let html = escapeHtml(text);
     
-    // Inline code (`code`)
+    // Inline code (`code`) - do this first to protect code content
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
     
-    // Bold (**text** or __text__)
-    html = html.replace(/\*\*([^\*]+)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    // Bold (**text** or __text__) - must be before italic to avoid conflicts
+    html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/__([^_]+?)__/g, '<strong>$1</strong>');
     
-    // Italic (*text* or _text_)
-    html = html.replace(/\*([^\*]+)\*/g, '<em>$1</em>');
-    html = html.replace(/_([^_]+)_/g, '<em>$1</em>');
+    // Skip italic formatting to avoid XML parsing errors
+    // Italic syntax conflicts with bold and causes mismatched tags
     
     // Headers (# Header) - must be in order from most # to least
     html = html.replace(/^###### (.+)$/gm, '<h6>$1</h6>');
