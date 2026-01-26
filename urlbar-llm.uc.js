@@ -612,6 +612,10 @@
       ? currentProvider.baseUrl 
       : `${currentProvider.baseUrl}/chat/completions`;
     
+    console.log(`[URLBar LLM] Request URL: ${url}`);
+    console.log(`[URLBar LLM] Model: ${currentProvider.model}`);
+    console.log(`[URLBar LLM] Provider: ${currentProvider.name}`);
+    
     const response = await fetch(url, {
       method: "POST",
       headers: {
@@ -629,6 +633,8 @@
     });
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      console.error(`[URLBar LLM] API error response:`, errorText);
       throw new Error(`API error: ${response.status} ${response.statusText}`);
     }
 
