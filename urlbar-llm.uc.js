@@ -242,21 +242,28 @@
     urlbarInput.value = newValue;
     currentQuery = newValue;
     
-    // If there's already text, show it
-    if (newValue) {
-      // Query is ready to send
-    }
-    
     // Set visual indicator with provider name
     urlbar.setAttribute("llm-mode-active", "true");
     urlbar.setAttribute("llm-provider", providerKey);
-    urlbar.setAttribute("llm-provider-name", currentProvider.name);
     
-    // Get identity box to add pill
-    const identityBox = urlbar.querySelector("#identity-box");
-    if (identityBox) {
-      identityBox.setAttribute("llm-provider-name", currentProvider.name);
+    // Create native Zen pill using urlbar-label-box
+    let labelBox = urlbar.querySelector("#urlbar-label-box");
+    if (!labelBox) {
+      // Create label box if it doesn't exist
+      labelBox = document.createXULElement("label");
+      labelBox.id = "urlbar-label-box";
+      labelBox.classList.add("urlbar-label-box");
+      
+      // Insert before the input
+      const inputContainer = urlbar.querySelector(".urlbar-input-container");
+      if (inputContainer) {
+        inputContainer.insertBefore(labelBox, inputContainer.firstChild);
+      }
     }
+    
+    // Set provider name in label
+    labelBox.textContent = currentProvider.name;
+    labelBox.style.display = "";
     
     // Hide native suggestions if preference enabled
     if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
@@ -280,13 +287,13 @@
     // Remove visual indicators
     urlbar.removeAttribute("llm-mode-active");
     urlbar.removeAttribute("llm-provider");
-    urlbar.removeAttribute("llm-provider-name");
     urlbar.removeAttribute("llm-hint");
     
-    // Remove pill from identity box
-    const identityBox = urlbar.querySelector("#identity-box");
-    if (identityBox) {
-      identityBox.removeAttribute("llm-provider-name");
+    // Hide pill
+    const labelBox = urlbar.querySelector("#urlbar-label-box");
+    if (labelBox) {
+      labelBox.style.display = "none";
+      labelBox.textContent = "";
     }
     
     // Show native suggestions again
@@ -327,7 +334,7 @@
       return null;
     }
 
-    // Create result row matching urlbar style
+    // Create result row matching urlbar style - use native structure
     const row = document.createElement("div");
     row.className = "urlbarView-row urlbarView-row-llm";
     row.setAttribute("type", "llm-response");
@@ -340,16 +347,10 @@
     // Content container (no icon)
     const content = document.createElement("div");
     content.className = "urlbarView-no-wrap";
-    content.style.width = "100%";
     
     // Title (streaming text goes here)
     const title = document.createElement("div");
     title.className = "urlbarView-title";
-    title.style.whiteSpace = "pre-wrap";
-    title.style.wordBreak = "break-word";
-    const maxHeight = getPref("extension.urlbar-llm.max-result-height", 300);
-    title.style.maxHeight = `${maxHeight}px`;
-    title.style.overflowY = "auto";
     title.textContent = "Thinking...";
     
     content.appendChild(title);

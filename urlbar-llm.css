@@ -5,38 +5,33 @@
  * @import "js/urlbar-llm.css";
  */
 
-/* LLM Mode Active - Add Zen-style pill */
-#urlbar[llm-mode-active="true"] #identity-box::before {
-  content: attr(llm-provider-name);
-  display: inline-flex;
-  align-items: center;
-  padding: 2px 8px;
-  margin-inline-end: 6px;
-  background: var(--toolbarbutton-icon-fill-attention);
-  color: white;
-  border-radius: 12px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  height: 20px;
+/* LLM Mode Active - Native Zen pill styling */
+#urlbar[llm-mode-active="true"] #urlbar-label-box {
+  background-color: var(--urlbar-box-bgcolor);
+  color: var(--urlbar-box-text-color);
+  padding-inline: 8px;
+  border-radius: var(--urlbar-inner-border-radius);
 }
 
-/* Provider-specific pill colors */
-#urlbar[llm-provider="mistral"] #identity-box::before {
+/* Provider-specific pill colors using native Zen variables */
+#urlbar[llm-provider="mistral"] #urlbar-label-box {
   background: linear-gradient(135deg, #ff7000 0%, #ff9a00 100%);
+  color: white;
 }
 
-#urlbar[llm-provider="openai"] #identity-box::before {
+#urlbar[llm-provider="openai"] #urlbar-label-box {
   background: linear-gradient(135deg, #10a37f 0%, #1a7f64 100%);
+  color: white;
 }
 
-#urlbar[llm-provider="gemini"] #identity-box::before {
+#urlbar[llm-provider="gemini"] #urlbar-label-box {
   background: linear-gradient(135deg, #4285f4 0%, #0f9d58 100%);
+  color: white;
 }
 
-#urlbar[llm-provider="ollama"] #identity-box::before {
+#urlbar[llm-provider="ollama"] #urlbar-label-box {
   background: linear-gradient(135deg, #000000 0%, #434343 100%);
+  color: white;
 }
 
 /* Hide suggestions when in LLM mode - controlled by preference */
@@ -46,17 +41,13 @@
   }
 }
 
-/* LLM Result Row Styling */
+/* LLM Result Row Styling - Use native Zen styling */
 .urlbarView-row-llm {
-  background-color: var(--urlbar-box-bgcolor, rgba(255, 255, 255, 0.8));
-  border-radius: 4px;
-  margin: 2px 4px;
-  padding: 8px 12px;
-  overflow-y: auto;
+  /* No custom background or borders - use native */
 }
 
 .urlbarView-row-llm:hover {
-  background-color: var(--urlbar-box-hover-bgcolor, rgba(0, 0, 0, 0.05));
+  /* Let native hover styles apply */
 }
 
 /* Hide the icon */
@@ -64,16 +55,25 @@
   display: none !important;
 }
 
-/* Theme-aware text color */
-.urlbarView-row-llm .urlbarView-title {
-  color: var(--urlbar-text-color, #000);
-  font-size: 13px;
-  line-height: 1.5;
+/* Remove custom padding - use native */
+.urlbarView-row-llm .urlbarView-row-inner {
   padding: 0;
-  margin: 0;
 }
 
-/* Dark mode text color */
+/* Response text should fill width and be scrollable via parent */
+.urlbarView-row-llm .urlbarView-no-wrap {
+  width: 100%;
+  overflow: visible;
+}
+
+.urlbarView-row-llm .urlbarView-title {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: visible;
+  max-height: none;
+}
+
+/* Theme-aware text color */
 html[zen-should-be-dark-mode="true"] .urlbarView-row-llm .urlbarView-title {
   color: var(--urlbar-text-color, #fff);
 }
