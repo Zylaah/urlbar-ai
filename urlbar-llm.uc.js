@@ -54,11 +54,17 @@
   let streamingResultRow = null;
   let abortController = null;
 
-  // Get preferences
-  const { Services } = ChromeUtils.import("resource://gre/modules/Services.jsm");
+  // Get preferences - Use XPCOMUtils which works reliably in Sine/fx-autoconfig
+  const { XPCOMUtils } = ChromeUtils.importESModule("resource://gre/modules/XPCOMUtils.sys.mjs");
+  const lazy = {};
+  XPCOMUtils.defineLazyServiceGetter(lazy, "prefs", "@mozilla.org/preferences-service;1", "nsIPrefBranch");
+  const Services = { prefs: lazy.prefs };
   
   function getPref(name, defaultValue) {
     try {
+      if (!Services || !Services.prefs) {
+        return defaultValue;
+      }
       const type = Services.prefs.getPrefType(name);
       if (type === Services.prefs.PREF_STRING) {
         return Services.prefs.getStringPref(name, defaultValue);
@@ -74,12 +80,19 @@
   }
 
   function setPref(name, value) {
-    if (typeof value === "string") {
-      Services.prefs.setStringPref(name, value);
-    } else if (typeof value === "boolean") {
-      Services.prefs.setBoolPref(name, value);
-    } else if (typeof value === "number") {
-      Services.prefs.setIntPref(name, value);
+    try {
+      if (!Services || !Services.prefs) {
+        return;
+      }
+      if (typeof value === "string") {
+        Services.prefs.setStringPref(name, value);
+      } else if (typeof value === "boolean") {
+        Services.prefs.setBoolPref(name, value);
+      } else if (typeof value === "number") {
+        Services.prefs.setIntPref(name, value);
+      }
+    } catch (e) {
+      console.error("[URLBar LLM] Failed to set preference:", e);
     }
   }
 
