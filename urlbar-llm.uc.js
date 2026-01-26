@@ -40,8 +40,8 @@
       gemini: {
         name: "Google Gemini",
         apiKey: "",
-        baseUrl: "https://generativelanguage.googleapis.com/v1beta/models",
-        model: "gemini-1.5-flash"
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+        model: "gemini-1.5-flash-latest"
       }
     },
     defaultProvider: "ollama"
@@ -719,7 +719,7 @@
   }
 
   async function streamGeminiResponse(query, titleElement, signal) {
-    const url = `${currentProvider.baseUrl}/${currentProvider.model}:streamGenerateContent?key=${currentProvider.apiKey}`;
+    const url = `${currentProvider.baseUrl}/models/${currentProvider.model}:streamGenerateContent?key=${currentProvider.apiKey}`;
     
     console.log(`[URLBar LLM] Gemini URL: ${url.replace(currentProvider.apiKey, 'API_KEY')}`);
     
