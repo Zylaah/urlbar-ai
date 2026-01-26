@@ -160,59 +160,7 @@
     }
 
     setupEventListeners(urlbar, urlbarInput);
-    registerZenActions();
     console.log("[URLBar LLM] Initialized");
-  }
-
-  // Register LLM actions with Zen's global actions system
-  function registerZenActions() {
-    try {
-      const globalActionsModule = ChromeUtils.importESModule(
-        "resource:///modules/ZenUBGlobalActions.sys.mjs"
-      );
-      
-      console.log("[URLBar LLM] Module loaded:", !!globalActionsModule);
-      console.log("[URLBar LLM] globalActions exists:", !!globalActionsModule.globalActions);
-      console.log("[URLBar LLM] globalActions length:", globalActionsModule.globalActions?.length);
-      
-      if (!globalActionsModule || !globalActionsModule.globalActions) {
-        console.warn("[URLBar LLM] Could not access globalActions");
-        return;
-      }
-
-      // Create LLM provider actions
-      const llmActions = Object.entries(CONFIG.providers).map(([key, provider]) => {
-        const action = {
-          label: `Chat with ${provider.name}`,
-          command: (window) => {
-            const urlbar = window.document.getElementById("urlbar");
-            const urlbarInput = urlbar?.querySelector("#urlbar-input");
-            if (urlbar && urlbarInput) {
-              activateLLMMode(urlbar, urlbarInput, key);
-            }
-          },
-          commandId: `zen:llm-chat-${key}`,
-          icon: "chrome://browser/skin/search-glass.svg",
-          isAvailable: () => true,
-          extraPayload: {}
-        };
-        console.log("[URLBar LLM] Created action:", action.label, action.commandId);
-        return action;
-      });
-
-      // Try to add to the array
-      const initialLength = globalActionsModule.globalActions.length;
-      globalActionsModule.globalActions.push(...llmActions);
-      const newLength = globalActionsModule.globalActions.length;
-      
-      console.log("[URLBar LLM] Actions array before:", initialLength);
-      console.log("[URLBar LLM] Actions array after:", newLength);
-      console.log("[URLBar LLM] Successfully added:", newLength - initialLength, "actions");
-      
-    } catch (e) {
-      console.error("[URLBar LLM] Failed to register Zen actions:", e);
-      console.error("[URLBar LLM] Stack:", e.stack);
-    }
   }
 
   function setupEventListeners(urlbar, urlbarInput) {
@@ -273,6 +221,13 @@
         e.preventDefault();
         e.stopPropagation();
         deactivateLLMMode(urlbar, urlbarInput, true);
+      } else if ((e.key === "Delete" || e.key === "Backspace") && isLLMMode) {
+        // Exit LLM mode if input is empty and user presses Delete/Backspace
+        if (!inputValue || inputValue.trim() === "") {
+          e.preventDefault();
+          e.stopPropagation();
+          deactivateLLMMode(urlbar, urlbarInput, false);
+        }
       }
     }, true);
 
