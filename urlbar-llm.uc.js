@@ -247,9 +247,16 @@
       // Query is ready to send
     }
     
-    // Set visual indicator
+    // Set visual indicator with provider name
     urlbar.setAttribute("llm-mode-active", "true");
     urlbar.setAttribute("llm-provider", providerKey);
+    urlbar.setAttribute("llm-provider-name", currentProvider.name);
+    
+    // Get identity box to add pill
+    const identityBox = urlbar.querySelector("#identity-box");
+    if (identityBox) {
+      identityBox.setAttribute("llm-provider-name", currentProvider.name);
+    }
     
     // Hide native suggestions if preference enabled
     if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
@@ -273,7 +280,14 @@
     // Remove visual indicators
     urlbar.removeAttribute("llm-mode-active");
     urlbar.removeAttribute("llm-provider");
+    urlbar.removeAttribute("llm-provider-name");
     urlbar.removeAttribute("llm-hint");
+    
+    // Remove pill from identity box
+    const identityBox = urlbar.querySelector("#identity-box");
+    if (identityBox) {
+      identityBox.removeAttribute("llm-provider-name");
+    }
     
     // Show native suggestions again
     if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
@@ -319,21 +333,14 @@
     row.setAttribute("type", "llm-response");
     row.setAttribute("selectable", "true");
     
-    // Create inner structure similar to native results
+    // Create inner structure similar to native results (no icon)
     const rowInner = document.createElement("div");
     rowInner.className = "urlbarView-row-inner";
     
-    // Icon
-    const icon = document.createElement("div");
-    icon.className = "urlbarView-favicon";
-    icon.style.backgroundImage = "url('chrome://browser/skin/trending.svg')";
-    icon.style.width = "16px";
-    icon.style.height = "16px";
-    icon.style.marginInlineEnd = "12px";
-    
-    // Content container
+    // Content container (no icon)
     const content = document.createElement("div");
     content.className = "urlbarView-no-wrap";
+    content.style.width = "100%";
     
     // Title (streaming text goes here)
     const title = document.createElement("div");
@@ -346,8 +353,6 @@
     title.textContent = "Thinking...";
     
     content.appendChild(title);
-    
-    rowInner.appendChild(icon);
     rowInner.appendChild(content);
     row.appendChild(rowInner);
     

@@ -5,13 +5,38 @@
  * @import "js/urlbar-llm.css";
  */
 
-/* LLM Mode Active Indicator */
-#urlbar[llm-mode-active="true"] {
-  /* Visual indicator that LLM mode is active */
+/* LLM Mode Active - Add Zen-style pill */
+#urlbar[llm-mode-active="true"] #identity-box::before {
+  content: attr(llm-provider-name);
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin-inline-end: 6px;
+  background: var(--toolbarbutton-icon-fill-attention);
+  color: white;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  height: 20px;
 }
 
-#urlbar[llm-mode-active="true"] #identity-box {
-  /* Could modify identity box to show LLM icon */
+/* Provider-specific pill colors */
+#urlbar[llm-provider="mistral"] #identity-box::before {
+  background: linear-gradient(135deg, #ff7000 0%, #ff9a00 100%);
+}
+
+#urlbar[llm-provider="openai"] #identity-box::before {
+  background: linear-gradient(135deg, #10a37f 0%, #1a7f64 100%);
+}
+
+#urlbar[llm-provider="gemini"] #identity-box::before {
+  background: linear-gradient(135deg, #4285f4 0%, #0f9d58 100%);
+}
+
+#urlbar[llm-provider="ollama"] #identity-box::before {
+  background: linear-gradient(135deg, #000000 0%, #434343 100%);
 }
 
 /* Hide suggestions when in LLM mode - controlled by preference */
@@ -26,7 +51,7 @@
   background-color: var(--urlbar-box-bgcolor, rgba(255, 255, 255, 0.8));
   border-radius: 4px;
   margin: 2px 4px;
-  padding: 8px;
+  padding: 8px 12px;
   overflow-y: auto;
 }
 
@@ -34,11 +59,28 @@
   background-color: var(--urlbar-box-hover-bgcolor, rgba(0, 0, 0, 0.05));
 }
 
+/* Hide the icon */
+.urlbarView-row-llm .urlbarView-favicon {
+  display: none !important;
+}
+
+/* Theme-aware text color */
 .urlbarView-row-llm .urlbarView-title {
   color: var(--urlbar-text-color, #000);
   font-size: 13px;
   line-height: 1.5;
-  padding: 4px 0;
+  padding: 0;
+  margin: 0;
+}
+
+/* Dark mode text color */
+html[zen-should-be-dark-mode="true"] .urlbarView-row-llm .urlbarView-title {
+  color: var(--urlbar-text-color, #fff);
+}
+
+/* Hide other suggestions when LLM result is shown */
+#urlbar[llm-mode-active="true"] .urlbarView-row:not(.urlbarView-row-llm) {
+  display: none !important;
 }
 
 /* Thinking/Streaming Indicator - Only if animations enabled */
