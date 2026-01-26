@@ -53,6 +53,7 @@
   let currentQuery = "";
   let streamingResultRow = null;
   let abortController = null;
+  let originalPlaceholder = "";
 
   // Get preferences - Direct access to preference service using Components
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
@@ -393,7 +394,8 @@
     labelBox.hidden = false;
     labelBox.style.display = "inline-block";
     
-    // Change placeholder text
+    // Save and change placeholder text
+    originalPlaceholder = urlbarInput.getAttribute("placeholder") || "";
     urlbarInput.setAttribute("placeholder", "Ask anything...");
     
     // Hide native suggestions if preference enabled
@@ -429,7 +431,11 @@
     }
     
     // Restore placeholder
-    urlbarInput.removeAttribute("placeholder");
+    if (originalPlaceholder) {
+      urlbarInput.setAttribute("placeholder", originalPlaceholder);
+    } else {
+      urlbarInput.removeAttribute("placeholder");
+    }
     
     // Show native suggestions again
     if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
