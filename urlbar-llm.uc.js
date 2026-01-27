@@ -343,20 +343,31 @@
       link.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
+        e.stopImmediatePropagation();
         
         const href = link.getAttribute('href');
         if (href && window.gBrowser) {
           // Open in background tab
           try {
+            const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
             window.gBrowser.loadOneTab(href, {
               inBackground: true,
-              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()
+              triggeringPrincipal: systemPrincipal,
+              relatedToCurrent: true
             });
+            console.log('[URLBar LLM] Opened link in background:', href);
           } catch (err) {
             console.error('[URLBar LLM] Failed to open link:', err);
+            // Fallback: try simple approach
+            try {
+              window.openUILinkIn(href, 'tab', { inBackground: true });
+            } catch (err2) {
+              console.error('[URLBar LLM] Fallback also failed:', err2);
+            }
           }
         }
-      });
+        return false;
+      }, true);
     });
   }
   
@@ -560,6 +571,17 @@
     row.className = "urlbarView-row urlbarView-row-llm";
     row.setAttribute("type", "llm-response");
     row.setAttribute("selectable", "false");
+    
+    // Stop all events from propagating to prevent urlbar from closing
+    row.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+    }, true);
+    row.addEventListener("mouseup", (e) => {
+      e.stopPropagation();
+    }, true);
+    row.addEventListener("click", (e) => {
+      e.stopPropagation();
+    }, true);
     
     // Create inner structure similar to native results (no icon)
     const rowInner = document.createElement("div");
