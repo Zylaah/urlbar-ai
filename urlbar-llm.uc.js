@@ -55,6 +55,7 @@
   let streamingResultRow = null;
   let abortController = null;
   let originalPlaceholder = "";
+  let isClickingLink = false; // Track if we're currently clicking a link
 
   // Get preferences - Direct access to preference service using Components
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
@@ -244,13 +245,32 @@
     }, true);
 
     // Clean up on blur (when urlbar loses focus)
-    urlbarInput.addEventListener("blur", () => {
-      // Don't deactivate immediately, allow time for clicks on results
+    urlbarInput.addEventListener("blur", (e) => {
+      // Don't deactivate if clicking a link
+      if (isClickingLink) {
+        console.log("[URLBar LLM] Blur ignored - clicking link");
+        return;
+      }
+      
+      // Don't deactivate if clicking inside the LLM result row
+      const llmRow = document.querySelector(".urlbarView-row-llm");
+      
       setTimeout(() => {
-        if (document.activeElement !== urlbarInput && isLLMMode) {
+        // Double check we're not clicking a link
+        if (isClickingLink) {
+          console.log("[URLBar LLM] Blur ignored in timeout - clicking link");
+          return;
+        }
+        
+        // Check if focus moved to something inside the LLM result
+        const activeElement = document.activeElement;
+        const clickedInsideLLM = llmRow && (llmRow.contains(activeElement) || llmRow.contains(e.relatedTarget));
+        
+        if (document.activeElement !== urlbarInput && isLLMMode && !clickedInsideLLM) {
+          console.log("[URLBar LLM] Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", e.relatedTarget?.tagName);
           deactivateLLMMode(urlbar, urlbarInput, true);
         }
-      }, 200);
+      }, 300);
     });
 
     // Listen for urlbar panel closing (when urlbar is not "floating" anymore)
@@ -261,7 +281,10 @@
         mutations.forEach((mutation) => {
           if (mutation.type === "attributes" && mutation.attributeName === "hidden") {
             // Panel is now hidden
-            if (urlbarView.hidden && isLLMMode) {
+            // Don't deactivate if we're just clicking a link
+            const llmRow = document.querySelector(".urlbarView-row-llm");
+            if (urlbarView.hidden && isLLMMode && !llmRow?.matches(':hover')) {
+              console.log("[URLBar LLM] View hidden, deactivating");
               deactivateLLMMode(urlbar, urlbarInput, true);
             }
           }
@@ -277,7 +300,12 @@
     // Also listen for when urlbar closes (unfocused state)
     urlbar.addEventListener("DOMAttrModified", (e) => {
       if (e.attrName === "open" && !urlbar.hasAttribute("open") && isLLMMode) {
-        deactivateLLMMode(urlbar, urlbarInput, true);
+        // Don't deactivate if clicking inside LLM row
+        const llmRow = document.querySelector(".urlbarView-row-llm");
+        if (!llmRow?.matches(':hover')) {
+          console.log("[URLBar LLM] Urlbar closed, deactivating");
+          deactivateLLMMode(urlbar, urlbarInput, true);
+        }
       }
     });
   }
@@ -345,7 +373,11 @@
         e.stopPropagation();
         e.stopImmediatePropagation();
         
+        isClickingLink = true; // Set flag to prevent blur deactivation
+        
         const href = link.getAttribute('href');
+        console.log('[URLBar LLM] Link clicked:', href);
+        
         if (href && window.gBrowser) {
           // Open in background tab
           try {
@@ -356,8 +388,21 @@
               relatedToCurrent: true
             });
             console.log('[URLBar LLM] Opened link in background:', href);
+            
+            // Keep urlbar focused and open
+            const urlbarInput = document.getElementById("urlbar-input");
+            if (urlbarInput) {
+              setTimeout(() => {
+                urlbarInput.focus();
+                isClickingLink = false; // Clear flag after refocus
+                console.log('[URLBar LLM] Refocused urlbar');
+              }, 10);
+            } else {
+              isClickingLink = false;
+            }
           } catch (err) {
             console.error('[URLBar LLM] Failed to open link:', err);
+            isClickingLink = false;
             // Fallback: try simple approach
             try {
               window.openUILinkIn(href, 'tab', { inBackground: true });
@@ -365,6 +410,8 @@
               console.error('[URLBar LLM] Fallback also failed:', err2);
             }
           }
+        } else {
+          isClickingLink = false;
         }
         return false;
       }, true);
@@ -573,14 +620,27 @@
     row.setAttribute("selectable", "false");
     
     // Stop all events from propagating to prevent urlbar from closing
+    // But don't preventDefault on links to allow our custom handler to work
     row.addEventListener("mousedown", (e) => {
       e.stopPropagation();
+      if (e.target.tagName !== 'A') {
+        e.preventDefault();
+      }
+      console.log("[URLBar LLM] Row mousedown blocked, target:", e.target.tagName);
     }, true);
     row.addEventListener("mouseup", (e) => {
       e.stopPropagation();
+      if (e.target.tagName !== 'A') {
+        e.preventDefault();
+      }
+      console.log("[URLBar LLM] Row mouseup blocked, target:", e.target.tagName);
     }, true);
     row.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (e.target.tagName !== 'A') {
+        e.preventDefault();
+      }
+      console.log("[URLBar LLM] Row click blocked, target:", e.target.tagName);
     }, true);
     
     // Create inner structure similar to native results (no icon)
