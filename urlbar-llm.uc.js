@@ -620,27 +620,27 @@
     row.setAttribute("selectable", "false");
     
     // Stop all events from propagating to prevent urlbar from closing
-    // But don't preventDefault on links to allow our custom handler to work
+    // But allow link clicks to propagate so our handler can work
     row.addEventListener("mousedown", (e) => {
-      e.stopPropagation();
       if (e.target.tagName !== 'A') {
+        e.stopPropagation();
         e.preventDefault();
+        console.log("[URLBar LLM] Row mousedown blocked, target:", e.target.tagName);
       }
-      console.log("[URLBar LLM] Row mousedown blocked, target:", e.target.tagName);
     }, true);
     row.addEventListener("mouseup", (e) => {
-      e.stopPropagation();
       if (e.target.tagName !== 'A') {
+        e.stopPropagation();
         e.preventDefault();
+        console.log("[URLBar LLM] Row mouseup blocked, target:", e.target.tagName);
       }
-      console.log("[URLBar LLM] Row mouseup blocked, target:", e.target.tagName);
     }, true);
     row.addEventListener("click", (e) => {
-      e.stopPropagation();
       if (e.target.tagName !== 'A') {
+        e.stopPropagation();
         e.preventDefault();
+        console.log("[URLBar LLM] Row click blocked, target:", e.target.tagName);
       }
-      console.log("[URLBar LLM] Row click blocked, target:", e.target.tagName);
     }, true);
     
     // Create inner structure similar to native results (no icon)
