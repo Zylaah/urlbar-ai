@@ -420,12 +420,10 @@
     originalPlaceholder = urlbarInput.getAttribute("placeholder") || "";
     urlbarInput.setAttribute("placeholder", "Ask anything...");
     
-    // Hide native suggestions if preference enabled
-    if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
-      const urlbarView = document.querySelector(".urlbarView");
-      if (urlbarView) {
-        urlbarView.style.display = "none";
-      }
+    // Hide the results container until streaming starts
+    const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+    if (urlbarViewBodyInner) {
+      urlbarViewBodyInner.style.display = "none";
     }
     
     // Focus input
@@ -469,12 +467,10 @@
     // Reset originalPlaceholder for next time
     originalPlaceholder = "";
     
-    // Show native suggestions again
-    if (getPref("extension.urlbar-llm.hide-suggestions", true)) {
-      const urlbarView = document.querySelector(".urlbarView");
-      if (urlbarView) {
-        urlbarView.style.display = "";
-      }
+    // Show urlbarView-body-inner again
+    const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+    if (urlbarViewBodyInner) {
+      urlbarViewBodyInner.style.display = "";
     }
     
     // Properly restore URL and clear input using Zen's native methods
@@ -559,8 +555,11 @@
     // Insert at top of results
     resultsContainer.insertBefore(row, resultsContainer.firstChild);
     
-    // Show urlbar view if hidden
-    urlbarView.style.display = "";
+    // Show urlbarView-body-inner when streaming starts
+    const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+    if (urlbarViewBodyInner) {
+      urlbarViewBodyInner.style.display = "";
+    }
     
     return { row, title };
   }
