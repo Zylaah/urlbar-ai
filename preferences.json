@@ -125,8 +125,8 @@
     "property": "extension.urlbar-llm.ollama-base-url",
     "label": "Ollama Base URL",
     "type": "string",
-    "placeholder": "http://localhost:11434/api",
-    "defaultValue": "http://localhost:11434/api",
+    "placeholder": "http://localhost:11434/api/generate",
+    "defaultValue": "http://localhost:11434/api/generate",
     "description": "The base URL for your local Ollama API. No API key required.",
     "conditions": [
       {
