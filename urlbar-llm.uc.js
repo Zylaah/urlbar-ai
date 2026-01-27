@@ -533,7 +533,7 @@
     const row = document.createElement("div");
     row.className = "urlbarView-row urlbarView-row-llm";
     row.setAttribute("type", "llm-response");
-    row.setAttribute("selectable", "true");
+    row.setAttribute("selectable", "false");
     
     // Create inner structure similar to native results (no icon)
     const rowInner = document.createElement("div");

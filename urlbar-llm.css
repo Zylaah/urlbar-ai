@@ -43,6 +43,21 @@
 /* LLM Result Row Styling - Use native Zen styling */
 .urlbarView-row-llm {
   /* Use native Zen row styling */
+  pointer-events: none !important;
+  cursor: default !important;
+}
+
+/* But allow clicks on links and interactive elements */
+.urlbarView-row-llm a,
+.urlbarView-row-llm button,
+.urlbarView-row-llm input {
+  pointer-events: auto !important;
+  cursor: pointer !important;
+}
+
+/* Remove hover effects on the row */
+.urlbarView-row-llm:hover {
+  background-color: transparent !important;
 }
 
 /* Hide the icon */
