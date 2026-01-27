@@ -60,9 +60,13 @@
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
     .getService(Components.interfaces.nsIPrefBranch);
   
+  const scriptSecurityManager = Components.classes["@mozilla.org/scriptsecuritymanager;1"]
+    .getService(Components.interfaces.nsIScriptSecurityManager);
+  
   // Create a minimal Services-like object
   const Services = {
-    prefs: prefsService
+    prefs: prefsService,
+    scriptSecurityManager: scriptSecurityManager
   };
   
   function getPref(name, defaultValue) {
@@ -332,6 +336,28 @@
         element.appendChild(span);
       }
     }
+    
+    // Handle link clicks - open in background tab without closing urlbar
+    const links = element.querySelectorAll('a');
+    links.forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const href = link.getAttribute('href');
+        if (href && window.gBrowser) {
+          // Open in background tab
+          try {
+            window.gBrowser.loadOneTab(href, {
+              inBackground: true,
+              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal()
+            });
+          } catch (err) {
+            console.error('[URLBar LLM] Failed to open link:', err);
+          }
+        }
+      });
+    });
   }
   
   function parseInlineMarkdown(text) {
