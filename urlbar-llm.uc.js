@@ -164,6 +164,13 @@
   }
 
   function setupEventListeners(urlbar, urlbarInput) {
+    // Check if already initialized to prevent duplicate listeners
+    if (urlbar._llmInitialized) {
+      console.log("[URLBar LLM] Already initialized, skipping duplicate setup");
+      return;
+    }
+    urlbar._llmInitialized = true;
+    
     let inputValue = "";
     let lastInputTime = Date.now();
 
@@ -812,13 +819,17 @@
     }
   }
 
-  // Initialize when DOM is ready
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
+  // Initialize when DOM is ready (only once)
+  let initialized = false;
+  function initOnce() {
+    if (initialized) return;
+    initialized = true;
     init();
   }
-
-  // Also initialize for new windows
-  window.addEventListener("load", init);
+  
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initOnce);
+  } else {
+    initOnce();
+  }
 })();
