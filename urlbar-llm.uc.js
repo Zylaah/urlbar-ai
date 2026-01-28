@@ -56,6 +56,9 @@
   let abortController = null;
   let originalPlaceholder = "";
   let isClickingLink = false; // Track if we're currently clicking a link
+  let conversationHistory = []; // Store conversation messages for follow-ups
+  let conversationContainer = null; // Container for all messages
+  let currentAssistantMessage = ""; // Track current streaming response
 
   // Get preferences - Direct access to preference service using Components
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
@@ -221,12 +224,21 @@
         e.preventDefault();
         e.stopPropagation();
         
-        // Send query to LLM
+        // Send query to LLM (follow-up or new)
         const query = currentQuery;
         if (query.trim()) {
+          // Add user message to conversation
+          conversationHistory.push({
+            role: "user",
+            content: query
+          });
+          
           // Clear the input immediately after sending
           currentQuery = "";
           urlbarInput.value = "";
+          
+          // Display user message and send to LLM
+          displayUserMessage(query);
           sendToLLM(urlbar, urlbarInput, query);
         }
       } else if (e.key === "Escape" && isLLMMode) {
@@ -521,6 +533,15 @@
     currentProvider = null;
     currentQuery = "";
     
+    // Clear conversation history
+    conversationHistory = [];
+    
+    // Remove conversation container
+    if (conversationContainer) {
+      conversationContainer.remove();
+      conversationContainer = null;
+    }
+    
     // Remove streaming result first
     if (streamingResultRow) {
       streamingResultRow.remove();
@@ -595,15 +616,34 @@
     console.log("[URLBar LLM] Deactivated");
   }
 
-  function createStreamingResultRow() {
+  function displayUserMessage(message) {
+    // Get or create conversation container
+    if (!conversationContainer) {
+      conversationContainer = createConversationContainer();
+    }
+    
+    // Create user message element
+    const messageDiv = document.createElement("div");
+    messageDiv.className = "llm-message llm-message-user";
+    messageDiv.textContent = message;
+    
+    conversationContainer.appendChild(messageDiv);
+    
+    // Scroll to bottom
+    const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+    if (urlbarViewBodyInner) {
+      urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
+    }
+  }
+
+  function createConversationContainer() {
     // Get urlbar view container
     const urlbarView = document.querySelector(".urlbarView");
     if (!urlbarView) {
-      // Create urlbar view if it doesn't exist (shouldn't happen, but safety)
       return null;
     }
 
-    // Find or create results container
+    // Find results container
     let resultsContainer = urlbarView.querySelector(".urlbarView-results");
     if (!resultsContainer) {
       resultsContainer = urlbarView.querySelector(".urlbarView-body");
@@ -612,64 +652,62 @@
       console.error("[URLBar LLM] Could not find results container");
       return null;
     }
-
-    // Create result row matching urlbar style - use native structure
-    const row = document.createElement("div");
-    row.className = "urlbarView-row urlbarView-row-llm";
-    row.setAttribute("type", "llm-response");
-    row.setAttribute("selectable", "false");
     
-    // Stop all events from propagating to prevent urlbar from closing
-    // But allow link clicks to propagate so our handler can work
-    row.addEventListener("mousedown", (e) => {
+    // Create conversation container
+    const container = document.createElement("div");
+    container.className = "llm-conversation-container";
+    
+    // Stop events from propagating
+    container.addEventListener("mousedown", (e) => {
       if (e.target.tagName !== 'A') {
         e.stopPropagation();
-        e.preventDefault();
-        console.log("[URLBar LLM] Row mousedown blocked, target:", e.target.tagName);
       }
     }, true);
-    row.addEventListener("mouseup", (e) => {
+    container.addEventListener("mouseup", (e) => {
       if (e.target.tagName !== 'A') {
         e.stopPropagation();
-        e.preventDefault();
-        console.log("[URLBar LLM] Row mouseup blocked, target:", e.target.tagName);
       }
     }, true);
-    row.addEventListener("click", (e) => {
+    container.addEventListener("click", (e) => {
       if (e.target.tagName !== 'A') {
         e.stopPropagation();
-        e.preventDefault();
-        console.log("[URLBar LLM] Row click blocked, target:", e.target.tagName);
       }
     }, true);
     
-    // Create inner structure similar to native results (no icon)
-    const rowInner = document.createElement("div");
-    rowInner.className = "urlbarView-row-inner";
+    resultsContainer.appendChild(container);
     
-    // Content container (no icon)
-    const content = document.createElement("div");
-    content.className = "urlbarView-no-wrap";
-    
-    // Title (streaming text goes here)
-    const title = document.createElement("div");
-    title.className = "urlbarView-title";
-    title.textContent = "Thinking...";
-    
-    content.appendChild(title);
-    rowInner.appendChild(content);
-    row.appendChild(rowInner);
-    
-    // Insert at top of results
-    resultsContainer.insertBefore(row, resultsContainer.firstChild);
-    
-    // Show urlbarView-body-inner when streaming starts
+    // Show urlbarView-body-inner
     const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
     if (urlbarViewBodyInner) {
       urlbarViewBodyInner.style.display = "";
     }
     
-    return { row, title };
+    return container;
+  }
+
+  function createStreamingResultRow() {
+    // Get or create conversation container
+    if (!conversationContainer) {
+      conversationContainer = createConversationContainer();
+    }
+    
+    if (!conversationContainer) {
+      return null;
+    }
+
+    // Create assistant message element
+    const messageDiv = document.createElement("div");
+    messageDiv.className = "llm-message llm-message-assistant";
+    
+    // Create content div for streaming text
+    const contentDiv = document.createElement("div");
+    contentDiv.className = "llm-message-content";
+    contentDiv.textContent = "Thinking...";
+    
+    messageDiv.appendChild(contentDiv);
+    conversationContainer.appendChild(messageDiv);
+    
+    return { row: messageDiv, title: contentDiv };
   }
 
   async function sendToLLM(urlbar, urlbarInput, query) {
@@ -723,11 +761,19 @@
       
       if (currentProvider.name === "Ollama (Local)") {
         // Ollama uses different API format
-        await streamOllamaResponse(query, titleElement, abortController.signal);
+        await streamOllamaResponse(conversationHistory, titleElement, abortController.signal);
       } else {
         // Standard OpenAI-compatible API (works for OpenAI, Mistral, Gemini)
-        await streamOpenAIResponse(query, titleElement, abortController.signal);
+        await streamOpenAIResponse(conversationHistory, titleElement, abortController.signal);
       }
+      
+      // Add assistant's response to conversation history
+      conversationHistory.push({
+        role: "assistant",
+        content: currentAssistantMessage
+      });
+      
+      console.log("[URLBar LLM] Conversation now has", conversationHistory.length, "messages");
 
       urlbar.removeAttribute("is-llm-thinking");
     } catch (error) {
@@ -741,7 +787,7 @@
     }
   }
 
-  async function streamOpenAIResponse(query, titleElement, signal) {
+  async function streamOpenAIResponse(messages, titleElement, signal) {
     // Add /chat/completions if not already in the URL
     const url = currentProvider.baseUrl.endsWith('/chat/completions') 
       ? currentProvider.baseUrl 
@@ -750,6 +796,7 @@
     console.log(`[URLBar LLM] Request URL: ${url}`);
     console.log(`[URLBar LLM] Model: ${currentProvider.model}`);
     console.log(`[URLBar LLM] Provider: ${currentProvider.name}`);
+    console.log(`[URLBar LLM] Conversation history: ${messages.length} messages`);
     
     const response = await fetch(url, {
       method: "POST",
@@ -759,9 +806,7 @@
       },
       body: JSON.stringify({
         model: currentProvider.model,
-        messages: [
-          { role: "user", content: query }
-        ],
+        messages: messages, // Use full conversation history
         stream: true
       }),
       signal
@@ -797,9 +842,13 @@
             const delta = json.choices?.[0]?.delta?.content;
             if (delta) {
               accumulatedText += delta;
+              currentAssistantMessage = accumulatedText; // Track for conversation history
               renderMarkdownToElement(accumulatedText, titleElement);
               // Auto-scroll to bottom
-              titleElement.scrollTop = titleElement.scrollHeight;
+              const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+              if (urlbarViewBodyInner) {
+                urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
+              }
             }
           } catch (e) {
             // Ignore parse errors
@@ -809,7 +858,21 @@
     }
   }
 
-  async function streamOllamaResponse(query, titleElement, signal) {
+  async function streamOllamaResponse(messages, titleElement, signal) {
+    // Convert messages to Ollama format (it uses a simple prompt)
+    // Build context from conversation history
+    let prompt = "";
+    for (const msg of messages) {
+      if (msg.role === "user") {
+        prompt += `User: ${msg.content}\n\n`;
+      } else if (msg.role === "assistant") {
+        prompt += `Assistant: ${msg.content}\n\n`;
+      }
+    }
+    prompt += "Assistant: "; // Prompt for next response
+    
+    console.log(`[URLBar LLM] Ollama prompt length: ${prompt.length} chars`);
+    
     const response = await fetch(currentProvider.baseUrl, {
       method: "POST",
       headers: {
@@ -817,7 +880,7 @@
       },
       body: JSON.stringify({
         model: currentProvider.model,
-        prompt: query,
+        prompt: prompt,
         stream: true
       }),
       signal
@@ -847,8 +910,13 @@
             const delta = json.response;
             if (delta) {
               accumulatedText += delta;
+              currentAssistantMessage = accumulatedText; // Track for conversation history
               renderMarkdownToElement(accumulatedText, titleElement);
-              titleElement.scrollTop = titleElement.scrollHeight;
+              // Auto-scroll to bottom
+              const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+              if (urlbarViewBodyInner) {
+                urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
+              }
             }
             if (json.done) {
               return;
