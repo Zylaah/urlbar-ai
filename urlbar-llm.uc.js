@@ -190,6 +190,8 @@
       if (isLLMMode) {
         // Update query while in LLM mode
         currentQuery = inputValue;
+        // Prevent native urlbar from processing results
+        e.stopPropagation();
       } else {
         // Check for "@provider" pattern
         const match = inputValue.match(/^@(\w+)(\s|$)/);
@@ -276,11 +278,22 @@
         
         // Check if focus moved to something inside the LLM conversation
         const activeElement = document.activeElement;
-        const clickedInsideLLM = llmContainer && (llmContainer.contains(activeElement) || llmContainer.contains(e.relatedTarget));
+        const relatedTarget = e.relatedTarget;
+        
+        // Check if the related target is a link (clicking on a link)
+        const isLinkClick = relatedTarget && relatedTarget.tagName === 'A';
+        
+        const clickedInsideLLM = llmContainer && (
+          llmContainer.contains(activeElement) || 
+          llmContainer.contains(relatedTarget) ||
+          isLinkClick
+        );
         
         if (document.activeElement !== urlbarInput && isLLMMode && !clickedInsideLLM) {
-          console.log("[URLBar LLM] Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", e.relatedTarget?.tagName);
+          console.log("[URLBar LLM] Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", relatedTarget?.tagName);
           deactivateLLMMode(urlbar, urlbarInput, true);
+        } else if (clickedInsideLLM) {
+          console.log("[URLBar LLM] Blur ignored - clicked inside LLM container or link");
         }
       }, 300);
     });
@@ -532,6 +545,12 @@
     originalPlaceholder = urlbarInput.getAttribute("placeholder") || "";
     urlbarInput.setAttribute("placeholder", "Ask anything...");
     
+    // Hide native suggestions completely
+    const urlbarView = document.querySelector(".urlbarView");
+    if (urlbarView) {
+      urlbarView.setAttribute("llm-mode-suppress-results", "true");
+    }
+    
     // Only hide the results container if there's no conversation yet
     if (conversationHistory.length === 0) {
       const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
@@ -596,10 +615,15 @@
     // Reset originalPlaceholder for next time
     originalPlaceholder = "";
     
-    // Show urlbarView-body-inner again
+    // Show urlbarView-body-inner again and remove suppression
     const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
     if (urlbarViewBodyInner) {
       urlbarViewBodyInner.style.display = "";
+    }
+    
+    const urlbarView = document.querySelector(".urlbarView");
+    if (urlbarView) {
+      urlbarView.removeAttribute("llm-mode-suppress-results");
     }
     
     // Properly restore URL and clear input using Zen's native methods
@@ -702,26 +726,37 @@
     
     // Stop events from propagating to prevent urlbar from closing (except for links)
     container.addEventListener("mousedown", (e) => {
-      if (e.target.tagName !== 'A') {
+      const target = e.target;
+      const isLink = target.tagName === 'A' || target.closest('a');
+      
+      if (!isLink) {
         e.stopPropagation();
-        console.log("[URLBar LLM] Container mousedown blocked, target:", e.target.tagName);
+        console.log("[URLBar LLM] Container mousedown blocked, target:", target.tagName);
       } else {
         console.log("[URLBar LLM] Container mousedown allowed for link");
       }
     }, true);
+    
     container.addEventListener("mouseup", (e) => {
-      if (e.target.tagName !== 'A') {
+      const target = e.target;
+      const isLink = target.tagName === 'A' || target.closest('a');
+      
+      if (!isLink) {
         e.stopPropagation();
-        console.log("[URLBar LLM] Container mouseup blocked, target:", e.target.tagName);
+        console.log("[URLBar LLM] Container mouseup blocked, target:", target.tagName);
       } else {
         console.log("[URLBar LLM] Container mouseup allowed for link");
       }
     }, true);
+    
     container.addEventListener("click", (e) => {
+      const target = e.target;
+      const isLink = target.tagName === 'A' || target.closest('a');
+      
       // Don't stop propagation for links (they have their own handler)
-      if (e.target.tagName !== 'A') {
+      if (!isLink) {
         e.stopPropagation();
-        console.log("[URLBar LLM] Container click blocked, target:", e.target.tagName);
+        console.log("[URLBar LLM] Container click blocked, target:", target.tagName);
       } else {
         console.log("[URLBar LLM] Container click allowed for link");
       }

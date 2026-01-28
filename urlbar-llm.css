@@ -5,6 +5,11 @@
  * @import "js/urlbar-llm.css";
  */
 
+/* Suppress native urlbar results when in LLM mode */
+.urlbarView[llm-mode-suppress-results="true"] .urlbarView-row:not(.llm-conversation-container) {
+  display: none !important;
+}
+
 /* LLM Mode Active - Use native Zen #urlbar-label-box styling */
 #urlbar[llm-mode-active="true"] #urlbar-label-box {
   /* Zen's native pill styling from zen-omnibox.css */
