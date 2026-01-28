@@ -283,6 +283,11 @@
   word-wrap: break-word !important;
   overflow-wrap: break-word !important;
   user-select: text !important;
+  pointer-events: auto !important;
+}
+
+.llm-message-content * {
+  pointer-events: auto !important;
 }
 
 /* Message content markdown styling */
@@ -314,14 +319,17 @@
 }
 
 .llm-message-content a {
-  color: light-dark(var(--zen-primary-color), #88aaff);
-  text-decoration: underline;
+  color: light-dark(var(--zen-primary-color), #88aaff) !important;
+  text-decoration: underline !important;
   cursor: pointer !important;
   pointer-events: auto !important;
+  position: relative !important;
+  z-index: 1000 !important;
 }
 
 .llm-message-content a:hover {
-  opacity: 0.8;
+  opacity: 0.8 !important;
+  background-color: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.05)) !important;
 }
 
 .llm-message-content h1,

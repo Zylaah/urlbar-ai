@@ -400,22 +400,26 @@
     
     // Handle link clicks - open in background tab without closing urlbar
     const links = element.querySelectorAll('a');
-    console.log('[URLBar LLM] Adding link handlers to', links.length, 'links');
+    console.log('[URLBar LLM] Adding link handlers to', links.length, 'links', element.textContent.length);
     
     links.forEach((link, index) => {
+      const href = link.getAttribute('href');
+      console.log('[URLBar LLM] Link', index, 'href:', href);
+      
       // Remove any existing handler
-      link.removeEventListener('click', link._llmClickHandler);
+      if (link._llmClickHandler) {
+        link.removeEventListener('click', link._llmClickHandler, true);
+        link.removeEventListener('mousedown', link._llmClickHandler, true);
+      }
       
       // Create new handler
       link._llmClickHandler = (e) => {
+        console.log('[URLBar LLM] Link handler fired! Event type:', e.type, 'href:', href, 'index:', index);
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
         
         isClickingLink = true; // Set flag to prevent blur deactivation
-        
-        const href = link.getAttribute('href');
-        console.log('[URLBar LLM] Link clicked (handler):', href, 'index:', index);
         
         if (href && window.gBrowser) {
           // Open in background tab
@@ -436,6 +440,7 @@
               setTimeout(() => {
                 // Ensure urlbar stays open
                 urlbar.setAttribute("open", "true");
+                urlbar.setAttribute("breakout-extend", "true");
                 
                 // Re-focus the urlbar
                 urlbarInput.focus();
@@ -460,13 +465,17 @@
           }
         } else {
           isClickingLink = false;
-          console.warn('[URLBar LLM] No href or gBrowser');
+          console.warn('[URLBar LLM] No href or gBrowser, href:', href);
         }
         return false;
       };
       
-      // Add the handler with capture phase
+      // Add the handler to BOTH click and mousedown with capture phase
       link.addEventListener('click', link._llmClickHandler, true);
+      link.addEventListener('mousedown', link._llmClickHandler, true);
+      
+      // Also try with no capture
+      link.addEventListener('click', link._llmClickHandler, false);
     });
   }
   
