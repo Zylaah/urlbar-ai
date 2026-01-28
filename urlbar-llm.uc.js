@@ -280,14 +280,23 @@
         const activeElement = document.activeElement;
         const relatedTarget = e.relatedTarget;
         
-        // Check if the related target is a link (clicking on a link)
-        const isLinkClick = relatedTarget && relatedTarget.tagName === 'A';
+        // Check if the related target is a link (clicking on a link or its children)
+        const isLinkClick = relatedTarget && (
+          relatedTarget.tagName === 'A' || 
+          (relatedTarget.closest && relatedTarget.closest('a'))
+        );
         
         const clickedInsideLLM = llmContainer && (
           llmContainer.contains(activeElement) || 
           llmContainer.contains(relatedTarget) ||
           isLinkClick
         );
+        
+        // Don't deactivate if we're clicking a link
+        if (isClickingLink) {
+          console.log("[URLBar LLM] Blur ignored - isClickingLink flag set");
+          return;
+        }
         
         if (document.activeElement !== urlbarInput && isLLMMode && !clickedInsideLLM) {
           console.log("[URLBar LLM] Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", relatedTarget?.tagName);
@@ -673,7 +682,9 @@
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
       
       if (linkElement) {
-        console.log("[URLBar LLM] Container mousedown - link detected, not blocking");
+        console.log("[URLBar LLM] Container mousedown - link detected, setting flag");
+        // Set flag immediately to prevent blur from deactivating
+        isClickingLink = true;
         // Don't stop propagation for links
         return;
       }
