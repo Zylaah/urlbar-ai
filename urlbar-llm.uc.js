@@ -753,52 +753,58 @@
     contentDiv.className = "llm-message-content";
     contentDiv.textContent = "Thinking...";
     
-    // Add event delegation for link clicks on the content div
-    contentDiv.addEventListener('click', (e) => {
+    // Handle link clicks using mouseup event (more reliable than click in this context)
+    const handleLinkInteraction = (e, eventType) => {
       const target = e.target;
       const link = target.tagName === 'A' ? target : target.closest('a');
       
       if (link && link.href) {
-        console.log('[URLBar LLM] Link clicked via delegation:', link.href);
+        console.log(`[URLBar LLM] Link ${eventType}:`, link.href);
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
         
-        isClickingLink = true;
-        
-        try {
-          const topWindow = window.top || window;
-          const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
-          
-          if (browser && browser.addTab) {
-            browser.addTab(link.href, {
-              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-              inBackground: true
-            });
-            console.log('[URLBar LLM] Successfully opened link in background');
-          } else if (topWindow.open) {
-            topWindow.open(link.href, '_blank');
-            console.log('[URLBar LLM] Opened using window.open');
-          }
-          
-          // Keep urlbar open and focused
-          setTimeout(() => {
-            const urlbarInput = document.getElementById("urlbar-input");
-            const urlbar = document.getElementById("urlbar");
-            if (urlbarInput && urlbar) {
-              urlbar.setAttribute("open", "true");
-              urlbar.setAttribute("breakout-extend", "true");
-              urlbarInput.focus();
+        // Only open on mouseup (acts like a click)
+        if (eventType === 'mouseup') {
+          try {
+            const topWindow = window.top || window;
+            const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
+            
+            if (browser && browser.addTab) {
+              browser.addTab(link.href, {
+                triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+                inBackground: true
+              });
+              console.log('[URLBar LLM] Successfully opened link in background');
+            } else if (topWindow.open) {
+              topWindow.open(link.href, '_blank');
+              console.log('[URLBar LLM] Opened using window.open');
             }
+            
+            // Keep urlbar open and focused
+            setTimeout(() => {
+              const urlbarInput = document.getElementById("urlbar-input");
+              const urlbar = document.getElementById("urlbar");
+              if (urlbarInput && urlbar) {
+                urlbar.setAttribute("open", "true");
+                urlbar.setAttribute("breakout-extend", "true");
+                urlbarInput.focus();
+              }
+              isClickingLink = false;
+              console.log('[URLBar LLM] Refocused urlbar');
+            }, 100);
+          } catch (err) {
+            console.error('[URLBar LLM] Failed to open link:', err);
             isClickingLink = false;
-            console.log('[URLBar LLM] Refocused urlbar');
-          }, 100);
-        } catch (err) {
-          console.error('[URLBar LLM] Failed to open link:', err);
-          isClickingLink = false;
+          }
         }
       }
-    }, true);
+    };
+    
+    // Use both mousedown and mouseup for complete control
+    contentDiv.addEventListener('mousedown', (e) => handleLinkInteraction(e, 'mousedown'), true);
+    contentDiv.addEventListener('mouseup', (e) => handleLinkInteraction(e, 'mouseup'), true);
+    contentDiv.addEventListener('click', (e) => handleLinkInteraction(e, 'click'), true);
     
     messageDiv.appendChild(contentDiv);
     conversationContainer.appendChild(messageDiv);
