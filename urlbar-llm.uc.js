@@ -494,7 +494,9 @@
     
     // Save and change placeholder text
     originalPlaceholder = urlbarInput.getAttribute("placeholder") || "";
-    urlbarInput.setAttribute("placeholder", "Ask anything...");
+    // Use different placeholder for follow-ups vs initial query
+    const placeholder = conversationHistory.length > 0 ? "Ask a follow-up..." : "Ask anything...";
+    urlbarInput.setAttribute("placeholder", placeholder);
     
     // Hide native suggestions completely
     const urlbarView = document.querySelector(".urlbarView");
