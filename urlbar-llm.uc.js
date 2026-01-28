@@ -400,20 +400,28 @@
     
     // Handle link clicks - open in background tab without closing urlbar
     const links = element.querySelectorAll('a');
-    console.log('[URLBar LLM] Adding link handlers to', links.length, 'links', element.textContent.length);
     
     links.forEach((link, index) => {
       const href = link.getAttribute('href');
-      console.log('[URLBar LLM] Link', index, 'href:', href);
+      
+      // Skip if already has handler
+      if (link._llmHandlerAttached) {
+        return;
+      }
+      link._llmHandlerAttached = true;
       
       // Remove any existing handler
       if (link._llmClickHandler) {
         link.removeEventListener('click', link._llmClickHandler, true);
-        link.removeEventListener('mousedown', link._llmClickHandler, true);
       }
       
-      // Create new handler
+      // Create new handler (only handles once per click)
       link._llmClickHandler = (e) => {
+        // Only handle click events, not mousedown (to avoid double-opening)
+        if (e.type !== 'click') {
+          return;
+        }
+        
         console.log('[URLBar LLM] Link handler fired! Event type:', e.type, 'href:', href, 'index:', index);
         e.preventDefault();
         e.stopPropagation();
@@ -472,13 +480,14 @@
         return false;
       };
       
-      // Add the handler to BOTH click and mousedown with capture phase
+      // Add the handler ONLY to click event with capture phase
       link.addEventListener('click', link._llmClickHandler, true);
-      link.addEventListener('mousedown', link._llmClickHandler, true);
-      
-      // Also try with no capture
-      link.addEventListener('click', link._llmClickHandler, false);
     });
+    
+    // Only log if there are actually links
+    if (links.length > 0) {
+      console.log('[URLBar LLM] Successfully attached handlers to', links.length, 'links');
+    }
   }
   
   function parseInlineMarkdown(text) {
