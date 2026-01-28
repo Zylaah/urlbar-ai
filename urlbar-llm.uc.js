@@ -398,103 +398,7 @@
       }
     }
     
-    // Handle link clicks - open in background tab without closing urlbar
-    const links = element.querySelectorAll('a');
-    
-    links.forEach((link, index) => {
-      const href = link.getAttribute('href');
-      
-      // Skip if already has handler
-      if (link._llmHandlerAttached) {
-        return;
-      }
-      link._llmHandlerAttached = true;
-      
-      // Remove any existing handler
-      if (link._llmClickHandler) {
-        link.removeEventListener('click', link._llmClickHandler, true);
-      }
-      
-      // Create new handler (only handles once per click)
-      link._llmClickHandler = (e) => {
-        console.log('[URLBar LLM] Link handler CALLED! Event type:', e.type, 'href:', href, 'index:', index);
-        
-        // Only handle click events, not mousedown (to avoid double-opening)
-        if (e.type !== 'click') {
-          console.log('[URLBar LLM] Ignoring non-click event:', e.type);
-          return;
-        }
-        
-        console.log('[URLBar LLM] Link handler PROCESSING! Event type:', e.type, 'href:', href, 'index:', index);
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-        
-        isClickingLink = true; // Set flag to prevent blur deactivation
-        
-        if (href) {
-          // Open in background tab
-          try {
-            // Get the browser window's gBrowser from the top window
-            const topWindow = window.top || window;
-            const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
-            
-            if (browser && browser.addTab) {
-              // Use addTab which is more universally available
-              const newTab = browser.addTab(href, {
-                triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-                inBackground: true
-              });
-              console.log('[URLBar LLM] Successfully opened link in background tab:', href);
-            } else if (topWindow.open) {
-              // Fallback to window.open
-              topWindow.open(href, '_blank');
-              console.log('[URLBar LLM] Opened link using window.open:', href);
-            }
-            
-            // Keep urlbar focused and open
-            const urlbarInput = document.getElementById("urlbar-input");
-            const urlbar = document.getElementById("urlbar");
-            
-            if (urlbarInput && urlbar) {
-              setTimeout(() => {
-                // Ensure urlbar stays open
-                urlbar.setAttribute("open", "true");
-                urlbar.setAttribute("breakout-extend", "true");
-                
-                // Re-focus the urlbar
-                urlbarInput.focus();
-                
-                isClickingLink = false; // Clear flag after refocus
-                console.log('[URLBar LLM] Refocused urlbar and kept it open');
-              }, 100); // Increased timeout for better reliability
-            } else {
-              isClickingLink = false;
-              console.warn('[URLBar LLM] Could not find urlbar elements for refocus');
-            }
-          } catch (err) {
-            console.error('[URLBar LLM] Failed to open link:', err);
-            isClickingLink = false;
-          }
-        } else {
-          isClickingLink = false;
-          console.warn('[URLBar LLM] No href, href:', href);
-        }
-        return false;
-      };
-      
-      // Add the handler to multiple events to catch it
-      link.addEventListener('click', link._llmClickHandler, true);  // Capture phase
-      link.addEventListener('click', link._llmClickHandler, false); // Bubble phase
-      link.addEventListener('mouseup', link._llmClickHandler, true); // Backup
-      
-      console.log('[URLBar LLM] Attached handler to link', index, 'href:', href);
-    });
-    
-    // Only log if there are actually links
-    if (links.length > 0) {
-      console.log('[URLBar LLM] Successfully attached handlers to', links.length, 'links', element.textContent.length);
-    }
+    // Don't attach individual link handlers - we'll use event delegation on the message element instead
   }
   
   function parseInlineMarkdown(text) {
@@ -837,6 +741,53 @@
     const contentDiv = document.createElement("div");
     contentDiv.className = "llm-message-content";
     contentDiv.textContent = "Thinking...";
+    
+    // Add event delegation for link clicks on the content div
+    contentDiv.addEventListener('click', (e) => {
+      const target = e.target;
+      const link = target.tagName === 'A' ? target : target.closest('a');
+      
+      if (link && link.href) {
+        console.log('[URLBar LLM] Link clicked via delegation:', link.href);
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        
+        isClickingLink = true;
+        
+        try {
+          const topWindow = window.top || window;
+          const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
+          
+          if (browser && browser.addTab) {
+            browser.addTab(link.href, {
+              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+              inBackground: true
+            });
+            console.log('[URLBar LLM] Successfully opened link in background');
+          } else if (topWindow.open) {
+            topWindow.open(link.href, '_blank');
+            console.log('[URLBar LLM] Opened using window.open');
+          }
+          
+          // Keep urlbar open and focused
+          setTimeout(() => {
+            const urlbarInput = document.getElementById("urlbar-input");
+            const urlbar = document.getElementById("urlbar");
+            if (urlbarInput && urlbar) {
+              urlbar.setAttribute("open", "true");
+              urlbar.setAttribute("breakout-extend", "true");
+              urlbarInput.focus();
+            }
+            isClickingLink = false;
+            console.log('[URLBar LLM] Refocused urlbar');
+          }, 100);
+        } catch (err) {
+          console.error('[URLBar LLM] Failed to open link:', err);
+          isClickingLink = false;
+        }
+      }
+    }, true);
     
     messageDiv.appendChild(contentDiv);
     conversationContainer.appendChild(messageDiv);
