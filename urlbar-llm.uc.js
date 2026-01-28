@@ -400,8 +400,14 @@
     
     // Handle link clicks - open in background tab without closing urlbar
     const links = element.querySelectorAll('a');
-    links.forEach(link => {
-      link.addEventListener('click', (e) => {
+    console.log('[URLBar LLM] Adding link handlers to', links.length, 'links');
+    
+    links.forEach((link, index) => {
+      // Remove any existing handler
+      link.removeEventListener('click', link._llmClickHandler);
+      
+      // Create new handler
+      link._llmClickHandler = (e) => {
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -409,7 +415,7 @@
         isClickingLink = true; // Set flag to prevent blur deactivation
         
         const href = link.getAttribute('href');
-        console.log('[URLBar LLM] Link clicked:', href);
+        console.log('[URLBar LLM] Link clicked (handler):', href, 'index:', index);
         
         if (href && window.gBrowser) {
           // Open in background tab
@@ -420,26 +426,26 @@
               triggeringPrincipal: systemPrincipal,
               relatedToCurrent: true
             });
-            console.log('[URLBar LLM] Opened link in background:', href);
+            console.log('[URLBar LLM] Successfully opened link in background:', href);
             
             // Keep urlbar focused and open
             const urlbarInput = document.getElementById("urlbar-input");
-            if (urlbarInput) {
+            const urlbar = document.getElementById("urlbar");
+            
+            if (urlbarInput && urlbar) {
               setTimeout(() => {
+                // Ensure urlbar stays open
+                urlbar.setAttribute("open", "true");
+                
                 // Re-focus the urlbar
                 urlbarInput.focus();
                 
-                // Ensure the urlbar stays open by setting the open attribute
-                const urlbar = document.getElementById("urlbar");
-                if (urlbar && !urlbar.hasAttribute("open")) {
-                  urlbar.setAttribute("open", "true");
-                }
-                
                 isClickingLink = false; // Clear flag after refocus
                 console.log('[URLBar LLM] Refocused urlbar and kept it open');
-              }, 50); // Increased timeout for more reliable refocus
+              }, 100); // Increased timeout for better reliability
             } else {
               isClickingLink = false;
+              console.warn('[URLBar LLM] Could not find urlbar elements for refocus');
             }
           } catch (err) {
             console.error('[URLBar LLM] Failed to open link:', err);
@@ -447,15 +453,20 @@
             // Fallback: try simple approach
             try {
               window.openUILinkIn(href, 'tab', { inBackground: true });
+              console.log('[URLBar LLM] Opened link using fallback method');
             } catch (err2) {
               console.error('[URLBar LLM] Fallback also failed:', err2);
             }
           }
         } else {
           isClickingLink = false;
+          console.warn('[URLBar LLM] No href or gBrowser');
         }
         return false;
-      }, true);
+      };
+      
+      // Add the handler with capture phase
+      link.addEventListener('click', link._llmClickHandler, true);
     });
   }
   
@@ -724,43 +735,49 @@
     container.className = "llm-conversation-container";
     console.log("[URLBar LLM] Creating new conversation container");
     
-    // Stop events from propagating to prevent urlbar from closing (except for links)
+    // Stop events from propagating to prevent urlbar from closing
+    // For links, we need special handling to allow them to work
     container.addEventListener("mousedown", (e) => {
       const target = e.target;
-      const isLink = target.tagName === 'A' || target.closest('a');
+      const linkElement = target.tagName === 'A' ? target : target.closest('a');
       
-      if (!isLink) {
-        e.stopPropagation();
-        console.log("[URLBar LLM] Container mousedown blocked, target:", target.tagName);
-      } else {
-        console.log("[URLBar LLM] Container mousedown allowed for link");
+      if (linkElement) {
+        console.log("[URLBar LLM] Container mousedown - link detected, not blocking");
+        // Don't stop propagation for links
+        return;
       }
-    }, true);
+      
+      e.stopPropagation();
+      console.log("[URLBar LLM] Container mousedown blocked, target:", target.tagName);
+    }, false); // Changed to bubble phase
     
     container.addEventListener("mouseup", (e) => {
       const target = e.target;
-      const isLink = target.tagName === 'A' || target.closest('a');
+      const linkElement = target.tagName === 'A' ? target : target.closest('a');
       
-      if (!isLink) {
-        e.stopPropagation();
-        console.log("[URLBar LLM] Container mouseup blocked, target:", target.tagName);
-      } else {
-        console.log("[URLBar LLM] Container mouseup allowed for link");
+      if (linkElement) {
+        console.log("[URLBar LLM] Container mouseup - link detected, not blocking");
+        // Don't stop propagation for links
+        return;
       }
-    }, true);
+      
+      e.stopPropagation();
+      console.log("[URLBar LLM] Container mouseup blocked, target:", target.tagName);
+    }, false); // Changed to bubble phase
     
     container.addEventListener("click", (e) => {
       const target = e.target;
-      const isLink = target.tagName === 'A' || target.closest('a');
+      const linkElement = target.tagName === 'A' ? target : target.closest('a');
       
-      // Don't stop propagation for links (they have their own handler)
-      if (!isLink) {
-        e.stopPropagation();
-        console.log("[URLBar LLM] Container click blocked, target:", target.tagName);
-      } else {
-        console.log("[URLBar LLM] Container click allowed for link");
+      if (linkElement) {
+        console.log("[URLBar LLM] Container click - link detected, not blocking");
+        // Don't stop propagation for links
+        return;
       }
-    }, true);
+      
+      e.stopPropagation();
+      console.log("[URLBar LLM] Container click blocked, target:", target.tagName);
+    }, false); // Changed to bubble phase
     
     resultsContainer.appendChild(container);
     
