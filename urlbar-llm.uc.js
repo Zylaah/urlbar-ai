@@ -700,21 +700,31 @@
     container.className = "llm-conversation-container";
     console.log("[URLBar LLM] Creating new conversation container");
     
-    // Stop ALL events from propagating to prevent urlbar from closing
+    // Stop events from propagating to prevent urlbar from closing (except for links)
     container.addEventListener("mousedown", (e) => {
-      e.stopPropagation();
-      console.log("[URLBar LLM] Container mousedown blocked, target:", e.target.tagName);
-    }, true);
-    container.addEventListener("mouseup", (e) => {
-      e.stopPropagation();
-      console.log("[URLBar LLM] Container mouseup blocked, target:", e.target.tagName);
-    }, true);
-    container.addEventListener("click", (e) => {
-      // Only stop propagation for non-links (links have their own handler)
       if (e.target.tagName !== 'A') {
         e.stopPropagation();
+        console.log("[URLBar LLM] Container mousedown blocked, target:", e.target.tagName);
+      } else {
+        console.log("[URLBar LLM] Container mousedown allowed for link");
       }
-      console.log("[URLBar LLM] Container click, target:", e.target.tagName);
+    }, true);
+    container.addEventListener("mouseup", (e) => {
+      if (e.target.tagName !== 'A') {
+        e.stopPropagation();
+        console.log("[URLBar LLM] Container mouseup blocked, target:", e.target.tagName);
+      } else {
+        console.log("[URLBar LLM] Container mouseup allowed for link");
+      }
+    }, true);
+    container.addEventListener("click", (e) => {
+      // Don't stop propagation for links (they have their own handler)
+      if (e.target.tagName !== 'A') {
+        e.stopPropagation();
+        console.log("[URLBar LLM] Container click blocked, target:", e.target.tagName);
+      } else {
+        console.log("[URLBar LLM] Container click allowed for link");
+      }
     }, true);
     
     resultsContainer.appendChild(container);
