@@ -421,16 +421,25 @@
         
         isClickingLink = true; // Set flag to prevent blur deactivation
         
-        if (href && window.gBrowser) {
+        if (href) {
           // Open in background tab
           try {
-            const systemPrincipal = Services.scriptSecurityManager.getSystemPrincipal();
-            window.gBrowser.loadOneTab(href, {
-              inBackground: true,
-              triggeringPrincipal: systemPrincipal,
-              relatedToCurrent: true
-            });
-            console.log('[URLBar LLM] Successfully opened link in background:', href);
+            // Get the browser window's gBrowser from the top window
+            const topWindow = window.top || window;
+            const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
+            
+            if (browser && browser.addTab) {
+              // Use addTab which is more universally available
+              const newTab = browser.addTab(href, {
+                triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+                inBackground: true
+              });
+              console.log('[URLBar LLM] Successfully opened link in background tab:', href);
+            } else if (topWindow.open) {
+              // Fallback to window.open
+              topWindow.open(href, '_blank');
+              console.log('[URLBar LLM] Opened link using window.open:', href);
+            }
             
             // Keep urlbar focused and open
             const urlbarInput = document.getElementById("urlbar-input");
@@ -455,17 +464,10 @@
           } catch (err) {
             console.error('[URLBar LLM] Failed to open link:', err);
             isClickingLink = false;
-            // Fallback: try simple approach
-            try {
-              window.openUILinkIn(href, 'tab', { inBackground: true });
-              console.log('[URLBar LLM] Opened link using fallback method');
-            } catch (err2) {
-              console.error('[URLBar LLM] Fallback also failed:', err2);
-            }
           }
         } else {
           isClickingLink = false;
-          console.warn('[URLBar LLM] No href or gBrowser, href:', href);
+          console.warn('[URLBar LLM] No href, href:', href);
         }
         return false;
       };
