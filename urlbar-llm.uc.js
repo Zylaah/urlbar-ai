@@ -264,8 +264,8 @@
         return;
       }
       
-      // Don't deactivate if clicking inside the LLM result row
-      const llmRow = document.querySelector(".urlbarView-row-llm");
+      // Don't deactivate if clicking inside the conversation container
+      const llmContainer = document.querySelector(".llm-conversation-container");
       
       setTimeout(() => {
         // Double check we're not clicking a link
@@ -274,9 +274,9 @@
           return;
         }
         
-        // Check if focus moved to something inside the LLM result
+        // Check if focus moved to something inside the LLM conversation
         const activeElement = document.activeElement;
-        const clickedInsideLLM = llmRow && (llmRow.contains(activeElement) || llmRow.contains(e.relatedTarget));
+        const clickedInsideLLM = llmContainer && (llmContainer.contains(activeElement) || llmContainer.contains(e.relatedTarget));
         
         if (document.activeElement !== urlbarInput && isLLMMode && !clickedInsideLLM) {
           console.log("[URLBar LLM] Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", e.relatedTarget?.tagName);
@@ -293,9 +293,13 @@
         mutations.forEach((mutation) => {
           if (mutation.type === "attributes" && mutation.attributeName === "hidden") {
             // Panel is now hidden
-            // Don't deactivate if we're just clicking a link
-            const llmRow = document.querySelector(".urlbarView-row-llm");
-            if (urlbarView.hidden && isLLMMode && !llmRow?.matches(':hover')) {
+            // Don't deactivate if we're clicking a link or in the conversation
+            if (isClickingLink) {
+              console.log("[URLBar LLM] View hide ignored - clicking link");
+              return;
+            }
+            const llmContainer = document.querySelector(".llm-conversation-container");
+            if (urlbarView.hidden && isLLMMode && !llmContainer?.matches(':hover')) {
               console.log("[URLBar LLM] View hidden, deactivating");
               deactivateLLMMode(urlbar, urlbarInput, true);
             }
@@ -312,9 +316,13 @@
     // Also listen for when urlbar closes (unfocused state)
     urlbar.addEventListener("DOMAttrModified", (e) => {
       if (e.attrName === "open" && !urlbar.hasAttribute("open") && isLLMMode) {
-        // Don't deactivate if clicking inside LLM row
-        const llmRow = document.querySelector(".urlbarView-row-llm");
-        if (!llmRow?.matches(':hover')) {
+        // Don't deactivate if clicking a link or inside conversation
+        if (isClickingLink) {
+          console.log("[URLBar LLM] Urlbar close ignored - clicking link");
+          return;
+        }
+        const llmContainer = document.querySelector(".llm-conversation-container");
+        if (!llmContainer?.matches(':hover')) {
           console.log("[URLBar LLM] Urlbar closed, deactivating");
           deactivateLLMMode(urlbar, urlbarInput, true);
         }
@@ -405,10 +413,18 @@
             const urlbarInput = document.getElementById("urlbar-input");
             if (urlbarInput) {
               setTimeout(() => {
+                // Re-focus the urlbar
                 urlbarInput.focus();
+                
+                // Ensure the urlbar stays open by setting the open attribute
+                const urlbar = document.getElementById("urlbar");
+                if (urlbar && !urlbar.hasAttribute("open")) {
+                  urlbar.setAttribute("open", "true");
+                }
+                
                 isClickingLink = false; // Clear flag after refocus
-                console.log('[URLBar LLM] Refocused urlbar');
-              }, 10);
+                console.log('[URLBar LLM] Refocused urlbar and kept it open');
+              }, 50); // Increased timeout for more reliable refocus
             } else {
               isClickingLink = false;
             }
@@ -516,16 +532,24 @@
     originalPlaceholder = urlbarInput.getAttribute("placeholder") || "";
     urlbarInput.setAttribute("placeholder", "Ask anything...");
     
-    // Hide the results container until streaming starts
-    const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
-    if (urlbarViewBodyInner) {
-      urlbarViewBodyInner.style.display = "none";
+    // Only hide the results container if there's no conversation yet
+    if (conversationHistory.length === 0) {
+      const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+      if (urlbarViewBodyInner) {
+        urlbarViewBodyInner.style.display = "none";
+      }
+    } else {
+      // If we have a conversation, make sure it's visible
+      const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+      if (urlbarViewBodyInner) {
+        urlbarViewBodyInner.style.display = "";
+      }
     }
     
     // Focus input
     urlbarInput.focus();
     
-    console.log(`[URLBar LLM] Activated with provider: ${providerKey}`);
+    console.log(`[URLBar LLM] Activated with provider: ${providerKey}, existing messages: ${conversationHistory.length}`);
   }
 
   function deactivateLLMMode(urlbar, urlbarInput, restoreURL = false) {
@@ -618,8 +642,14 @@
 
   function displayUserMessage(message) {
     // Get or create conversation container
-    if (!conversationContainer) {
+    if (!conversationContainer || !conversationContainer.parentNode) {
+      console.log("[URLBar LLM] Creating/recreating conversation container");
       conversationContainer = createConversationContainer();
+    }
+    
+    if (!conversationContainer) {
+      console.error("[URLBar LLM] Failed to create conversation container");
+      return;
     }
     
     // Create user message element
@@ -629,17 +659,22 @@
     
     conversationContainer.appendChild(messageDiv);
     
+    console.log("[URLBar LLM] User message added. Total children:", conversationContainer.children.length);
+    
     // Scroll to bottom
-    const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
-    if (urlbarViewBodyInner) {
-      urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
-    }
+    setTimeout(() => {
+      const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+      if (urlbarViewBodyInner) {
+        urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
+      }
+    }, 10);
   }
 
   function createConversationContainer() {
     // Get urlbar view container
     const urlbarView = document.querySelector(".urlbarView");
     if (!urlbarView) {
+      console.error("[URLBar LLM] Could not find urlbarView");
       return null;
     }
 
@@ -653,25 +688,33 @@
       return null;
     }
     
-    // Create conversation container
-    const container = document.createElement("div");
-    container.className = "llm-conversation-container";
+    // Check if container already exists
+    let container = resultsContainer.querySelector(".llm-conversation-container");
+    if (container) {
+      console.log("[URLBar LLM] Reusing existing conversation container");
+      return container;
+    }
     
-    // Stop events from propagating
+    // Create conversation container
+    container = document.createElement("div");
+    container.className = "llm-conversation-container";
+    console.log("[URLBar LLM] Creating new conversation container");
+    
+    // Stop ALL events from propagating to prevent urlbar from closing
     container.addEventListener("mousedown", (e) => {
-      if (e.target.tagName !== 'A') {
-        e.stopPropagation();
-      }
+      e.stopPropagation();
+      console.log("[URLBar LLM] Container mousedown blocked, target:", e.target.tagName);
     }, true);
     container.addEventListener("mouseup", (e) => {
-      if (e.target.tagName !== 'A') {
-        e.stopPropagation();
-      }
+      e.stopPropagation();
+      console.log("[URLBar LLM] Container mouseup blocked, target:", e.target.tagName);
     }, true);
     container.addEventListener("click", (e) => {
+      // Only stop propagation for non-links (links have their own handler)
       if (e.target.tagName !== 'A') {
         e.stopPropagation();
       }
+      console.log("[URLBar LLM] Container click, target:", e.target.tagName);
     }, true);
     
     resultsContainer.appendChild(container);
@@ -687,11 +730,13 @@
 
   function createStreamingResultRow() {
     // Get or create conversation container
-    if (!conversationContainer) {
+    if (!conversationContainer || !conversationContainer.parentNode) {
+      console.log("[URLBar LLM] Creating/recreating conversation container for assistant");
       conversationContainer = createConversationContainer();
     }
     
     if (!conversationContainer) {
+      console.error("[URLBar LLM] Failed to create conversation container for assistant");
       return null;
     }
 
@@ -706,6 +751,8 @@
     
     messageDiv.appendChild(contentDiv);
     conversationContainer.appendChild(messageDiv);
+    
+    console.log("[URLBar LLM] Assistant message added. Total children:", conversationContainer.children.length);
     
     return { row: messageDiv, title: contentDiv };
   }
