@@ -253,11 +253,23 @@
   cursor: text !important;
 }
 
+/* Message pair container - holds both user and assistant messages together */
+.llm-message-pair {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 12px;
+  background: light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.03));
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
+}
+
 /* Message bubbles */
 .llm-message {
-  max-width: 85%;
+  width: 100%;
   padding: 8px 12px;
-  border-radius: 12px;
+  border-radius: 8px;
   word-wrap: break-word;
   overflow-wrap: break-word;
   user-select: text !important;
@@ -265,17 +277,14 @@
 }
 
 .llm-message-user {
-  align-self: flex-end;
   background: var(--zen-primary-color);
   color: white;
-  border-bottom-right-radius: 4px;
+  font-weight: 500;
 }
 
 .llm-message-assistant {
-  align-self: flex-start;
   background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.05));
   color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.9));
-  border-bottom-left-radius: 4px;
 }
 
 .llm-message-content {
