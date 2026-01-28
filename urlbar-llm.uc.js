@@ -239,6 +239,9 @@
           currentQuery = "";
           urlbarInput.value = "";
           
+          // Update placeholder for follow-ups
+          urlbarInput.setAttribute("placeholder", "Ask a follow-up...");
+          
           // Display user message and send to LLM
           displayUserMessage(query);
           sendToLLM(urlbar, urlbarInput, query);
