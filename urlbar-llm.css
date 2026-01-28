@@ -276,7 +276,7 @@
 }
 
 .llm-message-user {
-  background: var(--zen-primary-color);
+  background: transparent;
   color: white;
   font-weight: 500;
 }
