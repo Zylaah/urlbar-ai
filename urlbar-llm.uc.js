@@ -417,12 +417,15 @@
       
       // Create new handler (only handles once per click)
       link._llmClickHandler = (e) => {
+        console.log('[URLBar LLM] Link handler CALLED! Event type:', e.type, 'href:', href, 'index:', index);
+        
         // Only handle click events, not mousedown (to avoid double-opening)
         if (e.type !== 'click') {
+          console.log('[URLBar LLM] Ignoring non-click event:', e.type);
           return;
         }
         
-        console.log('[URLBar LLM] Link handler fired! Event type:', e.type, 'href:', href, 'index:', index);
+        console.log('[URLBar LLM] Link handler PROCESSING! Event type:', e.type, 'href:', href, 'index:', index);
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -480,13 +483,17 @@
         return false;
       };
       
-      // Add the handler ONLY to click event with capture phase
-      link.addEventListener('click', link._llmClickHandler, true);
+      // Add the handler to multiple events to catch it
+      link.addEventListener('click', link._llmClickHandler, true);  // Capture phase
+      link.addEventListener('click', link._llmClickHandler, false); // Bubble phase
+      link.addEventListener('mouseup', link._llmClickHandler, true); // Backup
+      
+      console.log('[URLBar LLM] Attached handler to link', index, 'href:', href);
     });
     
     // Only log if there are actually links
     if (links.length > 0) {
-      console.log('[URLBar LLM] Successfully attached handlers to', links.length, 'links');
+      console.log('[URLBar LLM] Successfully attached handlers to', links.length, 'links', element.textContent.length);
     }
   }
   
