@@ -38,6 +38,63 @@
   color: black !important;
 }
 
+/* ============================================
+   LLM Mode Glow Animations (Provider-specific)
+   Override Zen's default glow with provider colors
+   ============================================ */
+
+/* Mistral - Orange glow */
+@keyframes llm-urlbar-glow-mistral {
+  0% {
+    box-shadow: 0 0 20px rgba(250, 80, 15, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 250px rgba(250, 80, 15, 0);
+  }
+}
+
+/* OpenAI - Green glow */
+@keyframes llm-urlbar-glow-openai {
+  0% {
+    box-shadow: 0 0 20px rgba(16, 163, 127, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 250px rgba(16, 163, 127, 0);
+  }
+}
+
+/* Ollama - White/gray glow */
+@keyframes llm-urlbar-glow-ollama {
+  0% {
+    box-shadow: 0 0 20px rgba(200, 200, 200, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 250px rgba(200, 200, 200, 0);
+  }
+}
+
+/* Apply provider-specific glow when animate-searchmode is triggered in LLM mode */
+#urlbar[llm-mode-active="true"][breakout-extend][animate-searchmode="true"]::before {
+  position: absolute;
+  content: "";
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+#urlbar[llm-provider="mistral"][breakout-extend][animate-searchmode="true"]::before {
+  animation: llm-urlbar-glow-mistral ease-out 1s forwards !important;
+}
+
+#urlbar[llm-provider="openai"][breakout-extend][animate-searchmode="true"]::before {
+  animation: llm-urlbar-glow-openai ease-out 1s forwards !important;
+}
+
+#urlbar[llm-provider="ollama"][breakout-extend][animate-searchmode="true"]::before {
+  animation: llm-urlbar-glow-ollama ease-out 1s forwards !important;
+}
 
 /* LLM Result Row Styling - Use native Zen styling */
 .urlbarView-row-llm {
