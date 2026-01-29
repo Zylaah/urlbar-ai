@@ -467,9 +467,10 @@
   }
 
   /**
-   * Search DuckDuckGo Instant Answer API
+   * Search DuckDuckGo HTML (scraping search results)
+   * Uses CORS proxy to bypass restrictions in userscript context
    */
-  async function searchDuckDuckGo(query) {
+  async function searchDuckDuckGo(query, limit = 3) {
     if (!isWebSearchEnabled()) {
       return null;
     }
@@ -477,55 +478,55 @@
     try {
       console.log('[URLBar LLM] Searching DuckDuckGo for:', query);
       
-      const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+      // Use DuckDuckGo Lite (HTML version)
+      const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
       
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json'
+      // Try direct fetch first (may work in some browsers)
+      let html;
+      try {
+        const response = await fetch(searchUrl, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0'
+          }
+        });
+        
+        if (response.ok) {
+          html = await response.text();
         }
-      });
+      } catch (corsError) {
+        console.log('[URLBar LLM] Direct fetch failed (CORS), trying alternative method...');
+        
+        // Try using allOrigins CORS proxy as fallback
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`;
+        const proxyResponse = await fetch(proxyUrl);
+        
+        if (!proxyResponse.ok) {
+          console.error('[URLBar LLM] Proxy fetch failed:', proxyResponse.status);
+          return null;
+        }
+        
+        html = await proxyResponse.text();
+      }
 
-      if (!response.ok) {
-        console.error('[URLBar LLM] DuckDuckGo API error:', response.status);
+      if (!html || html.length < 100) {
+        console.error('[URLBar LLM] Invalid HTML response');
         return null;
       }
 
-      const data = await response.json();
-      console.log('[URLBar LLM] DuckDuckGo response:', data);
+      console.log('[URLBar LLM] Got HTML response, length:', html.length);
       
-      // Extract useful information
-      const searchResults = {
-        abstract: data.Abstract || '',
-        abstractText: data.AbstractText || '',
-        abstractSource: data.AbstractSource || '',
-        abstractURL: data.AbstractURL || '',
-        definition: data.Definition || '',
-        definitionSource: data.DefinitionSource || '',
-        definitionURL: data.DefinitionURL || '',
-        relatedTopics: (data.RelatedTopics || [])
-          .filter(topic => topic.Text && topic.FirstURL)
-          .slice(0, 5)
-          .map(topic => ({
-            text: topic.Text,
-            url: topic.FirstURL
-          })),
-        answer: data.Answer || '',
-        type: data.Type || 'Unknown'
-      };
-
-      // Check if we got any useful data
-      const hasData = searchResults.abstract || 
-                     searchResults.definition || 
-                     searchResults.answer || 
-                     searchResults.relatedTopics.length > 0;
-
-      if (!hasData) {
-        console.log('[URLBar LLM] No useful data from DuckDuckGo');
+      // Parse results from DuckDuckGo Lite HTML
+      const results = parseDuckDuckGoLiteHTML(html, limit);
+      
+      if (results.length === 0) {
+        console.log('[URLBar LLM] No search results found');
         return null;
       }
 
-      return searchResults;
+      console.log('[URLBar LLM] Found', results.length, 'search results');
+      return results;
+
     } catch (error) {
       console.error('[URLBar LLM] DuckDuckGo search failed:', error);
       return null;
@@ -533,48 +534,81 @@
   }
 
   /**
+   * Parse DuckDuckGo Lite HTML to extract search results
+   */
+  function parseDuckDuckGoLiteHTML(html, limit) {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      // DuckDuckGo Lite uses table rows for results
+      const resultRows = doc.querySelectorAll('tr');
+      const results = [];
+      
+      for (const row of resultRows) {
+        if (results.length >= limit) break;
+        
+        // Look for result links (class="result-link")
+        const link = row.querySelector('a.result-link');
+        if (!link) continue;
+        
+        const url = link.href;
+        const title = link.textContent.trim();
+        
+        // Get snippet from the next table cell
+        const snippetCell = row.querySelector('td.result-snippet');
+        const snippet = snippetCell ? snippetCell.textContent.trim() : '';
+        
+        if (title && url && url.startsWith('http')) {
+          results.push({
+            title,
+            url,
+            snippet: snippet || title,
+            source: new URL(url).hostname.replace('www.', '')
+          });
+        }
+      }
+      
+      return results;
+    } catch (error) {
+      console.error('[URLBar LLM] Failed to parse DuckDuckGo HTML:', error);
+      return [];
+    }
+  }
+
+  /**
    * Format search results for LLM context
+   * Based on n4ze3m-page-assist format with XML-style tags
    */
   function formatSearchResultsForLLM(searchResults, originalQuery) {
-    if (!searchResults) {
+    if (!searchResults || searchResults.length === 0) {
       return null;
     }
 
     const currentDateTime = new Date().toLocaleString();
-    let context = `Web Search Results (via DuckDuckGo) for "${originalQuery}" - Current date/time: ${currentDateTime}\n\n`;
+    
+    // Build search results in XML format for better AI parsing
+    const searchResultsXml = searchResults.map((result, index) => {
+      return `<search-result data-url="${result.url}" data-index="${index}" data-source="${result.source}">
+Title: ${result.title}
+Snippet: ${result.snippet}
+</search-result>`;
+    }).join('\n\n');
 
-    if (searchResults.abstract) {
-      context += `Summary: ${searchResults.abstract}\n`;
-      if (searchResults.abstractSource) {
-        context += `Source: ${searchResults.abstractSource}\n`;
-      }
-      if (searchResults.abstractURL) {
-        context += `URL: ${searchResults.abstractURL}\n`;
-      }
-      context += '\n';
-    }
+    // Use prompt format inspired by page-assist
+    const context = `You are an AI model who is expert at searching the web and answering user's queries.
 
-    if (searchResults.definition) {
-      context += `Definition: ${searchResults.definition}\n`;
-      if (searchResults.definitionSource) {
-        context += `Source: ${searchResults.definitionSource}\n`;
-      }
-      context += '\n';
-    }
+Generate a response that is informative and relevant to the user's query based on provided search results. The current date and time are ${currentDateTime}.
 
-    if (searchResults.answer) {
-      context += `Quick Answer: ${searchResults.answer}\n\n`;
-    }
+The 'search-results' block provides knowledge from web search results. You can use this information to generate a meaningful response.
 
-    if (searchResults.relatedTopics.length > 0) {
-      context += `Related Information:\n`;
-      searchResults.relatedTopics.forEach((topic, index) => {
-        context += `${index + 1}. ${topic.text}\n   URL: ${topic.url}\n`;
-      });
-      context += '\n';
-    }
+IMPORTANT: When referencing information from search results, naturally mention the source (e.g., "According to [source]..." or "As reported by [source]..."). You can also include the URL if it adds value.
 
-    context += `---\n\nPlease answer the user's question using the above web search results as context. If the search results are relevant, incorporate them into your response. Include source URLs when referencing specific information.\n\n`;
+<search-results>
+${searchResultsXml}
+</search-results>
+
+User query: ${originalQuery}`;
     
     return context;
   }
