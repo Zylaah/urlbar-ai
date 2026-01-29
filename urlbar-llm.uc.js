@@ -1520,7 +1520,7 @@ Provide a direct, informative answer based on the sources above:`;
       
       if (needsSearch) {
         // Show searching status
-        titleElement.innerHTML = '<span class="llm-search-spinner"></span> Searching the web...';
+        titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
         
         console.log('[URLBar LLM] Web search triggered for query:', query);
         const searchResults = await searchDuckDuckGo(query);
