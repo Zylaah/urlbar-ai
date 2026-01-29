@@ -73,17 +73,34 @@
   }
 }
 
-/* Override Zen's native glow animation with provider-specific colors */
-/* Zen already sets up the ::before pseudo-element correctly - we just change the animation */
-#urlbar[llm-provider="mistral"][breakout-extend][animate-searchmode="true"]::before {
+/* LLM mode glow animation - matching Zen's exact ::before setup */
+/* From zen-omnibox.css: #urlbar[breakout-extend="true"][animate-searchmode="true"]::before */
+#urlbar[llm-mode-active="true"][breakout-extend="true"][animate-searchmode="true"] {
+  /* Ensure positioning context for ::before */
+  position: relative;
+}
+
+#urlbar[llm-mode-active="true"][breakout-extend="true"][animate-searchmode="true"]::before {
+  position: absolute;
+  content: "";
+  /* Only cover the top input area, not the expanded conversation container */
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--urlbar-container-height, 48px);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
+#urlbar[llm-provider="mistral"][breakout-extend="true"][animate-searchmode="true"]::before {
   animation: llm-urlbar-glow-mistral ease-out 1s forwards !important;
 }
 
-#urlbar[llm-provider="openai"][breakout-extend][animate-searchmode="true"]::before {
+#urlbar[llm-provider="openai"][breakout-extend="true"][animate-searchmode="true"]::before {
   animation: llm-urlbar-glow-openai ease-out 1s forwards !important;
 }
 
-#urlbar[llm-provider="ollama"][breakout-extend][animate-searchmode="true"]::before {
+#urlbar[llm-provider="ollama"][breakout-extend="true"][animate-searchmode="true"]::before {
   animation: llm-urlbar-glow-ollama ease-out 1s forwards !important;
 }
 
