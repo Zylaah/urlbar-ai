@@ -20,7 +20,7 @@
   const CONFIG = {
     providers: {
       mistral: {
-        name: "Mistral AI",
+        name: "Mistral",
         apiKey: "", // Set via about:config or prompt
         baseUrl: "https://api.mistral.ai/v1/chat/completions",
         model: "mistral-medium-latest"
