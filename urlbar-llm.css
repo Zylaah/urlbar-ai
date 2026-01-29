@@ -74,7 +74,12 @@
 }
 
 /* Apply provider-specific glow when animate-searchmode is triggered in LLM mode */
-#urlbar[llm-mode-active="true"][breakout-extend][animate-searchmode="true"]::before {
+/* Use .urlbar-background which is the actual visual container with correct dimensions */
+#urlbar[llm-mode-active="true"][breakout-extend="true"][animate-searchmode="true"] .urlbar-background {
+  position: relative;
+}
+
+#urlbar[llm-mode-active="true"][breakout-extend="true"][animate-searchmode="true"] .urlbar-background::after {
   position: absolute;
   content: "";
   inset: 0;
@@ -84,15 +89,15 @@
   pointer-events: none;
 }
 
-#urlbar[llm-provider="mistral"][breakout-extend][animate-searchmode="true"]::before {
+#urlbar[llm-provider="mistral"][breakout-extend="true"][animate-searchmode="true"] .urlbar-background::after {
   animation: llm-urlbar-glow-mistral ease-out 1s forwards !important;
 }
 
-#urlbar[llm-provider="openai"][breakout-extend][animate-searchmode="true"]::before {
+#urlbar[llm-provider="openai"][breakout-extend="true"][animate-searchmode="true"] .urlbar-background::after {
   animation: llm-urlbar-glow-openai ease-out 1s forwards !important;
 }
 
-#urlbar[llm-provider="ollama"][breakout-extend][animate-searchmode="true"]::before {
+#urlbar[llm-provider="ollama"][breakout-extend="true"][animate-searchmode="true"] .urlbar-background::after {
   animation: llm-urlbar-glow-ollama ease-out 1s forwards !important;
 }
 
