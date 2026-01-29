@@ -738,8 +738,200 @@
   }
 
   /**
+   * Fetch and extract main content from a webpage
+   * @param {string} url - The URL to fetch
+   * @param {number} maxLength - Maximum content length to return
+   * @returns {Promise<string|null>} - Extracted text content or null
+   */
+  async function fetchPageContent(url, maxLength = 4000) {
+    try {
+      console.log('[URLBar LLM] Fetching page content:', url);
+      
+      // Use CORS proxy
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      
+      const response = await fetch(proxyUrl, {
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/120.0'
+        }
+      });
+      
+      if (!response.ok) {
+        console.warn('[URLBar LLM] Failed to fetch page:', response.status);
+        return null;
+      }
+      
+      const html = await response.text();
+      if (!html || html.length < 100) {
+        return null;
+      }
+      
+      // Parse and extract main content
+      const content = extractMainContent(html);
+      
+      if (!content || content.length < 50) {
+        console.warn('[URLBar LLM] No meaningful content extracted from:', url);
+        return null;
+      }
+      
+      // Truncate if too long
+      const truncated = content.length > maxLength 
+        ? content.substring(0, maxLength) + '...[truncated]'
+        : content;
+      
+      console.log('[URLBar LLM] Extracted', truncated.length, 'chars from:', url);
+      return truncated;
+      
+    } catch (error) {
+      console.warn('[URLBar LLM] Error fetching page content:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Extract main text content from HTML, removing boilerplate
+   */
+  function extractMainContent(html) {
+    try {
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(html, 'text/html');
+      
+      // Remove unwanted elements
+      const unwantedSelectors = [
+        'script', 'style', 'noscript', 'iframe', 'svg', 'canvas',
+        'nav', 'header', 'footer', 'aside', 'form',
+        '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+        '.nav', '.navbar', '.header', '.footer', '.sidebar', '.menu',
+        '.advertisement', '.ad', '.ads', '.social', '.share', '.comments',
+        '.related', '.recommended', '.cookie', '.popup', '.modal'
+      ];
+      
+      for (const selector of unwantedSelectors) {
+        try {
+          doc.querySelectorAll(selector).forEach(el => el.remove());
+        } catch (e) {
+          // Selector might be invalid, skip
+        }
+      }
+      
+      // Try to find main content container
+      const mainSelectors = [
+        'article', 'main', '[role="main"]', '.article', '.content', 
+        '.post', '.entry', '.story', '#content', '#main', '.main-content'
+      ];
+      
+      let mainElement = null;
+      for (const selector of mainSelectors) {
+        mainElement = doc.querySelector(selector);
+        if (mainElement && mainElement.textContent.trim().length > 200) {
+          break;
+        }
+        mainElement = null;
+      }
+      
+      // Fall back to body if no main content found
+      const targetElement = mainElement || doc.body;
+      if (!targetElement) return null;
+      
+      // Extract text with some structure preservation
+      const textContent = extractTextWithStructure(targetElement);
+      
+      // Clean up the text
+      return cleanExtractedText(textContent);
+      
+    } catch (error) {
+      console.warn('[URLBar LLM] Error extracting content:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Extract text while preserving some structure (paragraphs, headings)
+   */
+  function extractTextWithStructure(element) {
+    const blocks = [];
+    
+    // Walk through important text elements
+    const textElements = element.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote, figcaption');
+    
+    for (const el of textElements) {
+      const text = el.textContent.trim();
+      if (text.length > 10) { // Skip very short fragments
+        // Add heading markers
+        if (el.tagName.match(/^H[1-6]$/)) {
+          blocks.push(`\n## ${text}\n`);
+        } else {
+          blocks.push(text);
+        }
+      }
+    }
+    
+    // If we didn't get enough content from structured elements, fall back to innerText
+    if (blocks.join(' ').length < 500) {
+      return element.innerText || element.textContent || '';
+    }
+    
+    return blocks.join('\n\n');
+  }
+
+  /**
+   * Clean up extracted text
+   */
+  function cleanExtractedText(text) {
+    if (!text) return '';
+    
+    return text
+      // Normalize whitespace
+      .replace(/[\t ]+/g, ' ')
+      // Remove excessive newlines
+      .replace(/\n{3,}/g, '\n\n')
+      // Remove lines that are just whitespace
+      .replace(/^\s+$/gm, '')
+      // Trim
+      .trim();
+  }
+
+  /**
+   * Fetch content from multiple search results in parallel
+   */
+  async function fetchSearchResultsContent(searchResults, maxResults = 3) {
+    console.log('[URLBar LLM] Fetching content from', Math.min(searchResults.length, maxResults), 'pages...');
+    
+    const fetchPromises = searchResults.slice(0, maxResults).map(async (result) => {
+      const content = await fetchPageContent(result.url, 3000);
+      return {
+        ...result,
+        content: content || result.snippet // Fall back to snippet if fetch fails
+      };
+    });
+    
+    // Wait for all fetches with a timeout
+    const timeoutPromise = new Promise(resolve => 
+      setTimeout(() => resolve('timeout'), 8000)
+    );
+    
+    try {
+      const raceResult = await Promise.race([
+        Promise.all(fetchPromises),
+        timeoutPromise
+      ]);
+      
+      if (raceResult === 'timeout') {
+        console.warn('[URLBar LLM] Content fetch timed out, using snippets');
+        return searchResults.map(r => ({ ...r, content: r.snippet }));
+      }
+      
+      return raceResult;
+    } catch (error) {
+      console.warn('[URLBar LLM] Error fetching content:', error);
+      return searchResults.map(r => ({ ...r, content: r.snippet }));
+    }
+  }
+
+  /**
    * Format search results for LLM context
-   * Based on n4ze3m-page-assist format with XML-style tags
+   * Now includes actual page content for better answers
    */
   function formatSearchResultsForLLM(searchResults, originalQuery) {
     if (!searchResults || searchResults.length === 0) {
@@ -748,28 +940,37 @@
 
     const currentDateTime = new Date().toLocaleString();
     
-    // Build search results in XML format for better AI parsing
+    // Build search results in XML format with content
     const searchResultsXml = searchResults.map((result, index) => {
-      return `<search-result data-url="${result.url}" data-index="${index}" data-source="${result.source}">
-Title: ${result.title}
-Snippet: ${result.snippet}
-</search-result>`;
+      const contentSection = result.content && result.content !== result.snippet
+        ? `\nContent:\n${result.content}`
+        : `\nSnippet: ${result.snippet}`;
+      
+      return `<source index="${index + 1}" url="${result.url}" site="${result.source}">
+Title: ${result.title}${contentSection}
+</source>`;
     }).join('\n\n');
 
-    // Use prompt format inspired by page-assist
-    const context = `You are an AI model who is expert at searching the web and answering user's queries.
+    // Enhanced prompt for better synthesis
+    const context = `You are a helpful AI assistant with access to current web search results. Your task is to provide a comprehensive, accurate answer based on the information from these sources.
 
-Generate a response that is informative and relevant to the user's query based on provided search results. The current date and time are ${currentDateTime}.
+Current date and time: ${currentDateTime}
 
-The 'search-results' block provides knowledge from web search results. You can use this information to generate a meaningful response.
+Instructions:
+- Synthesize information from the sources to directly answer the user's question
+- DO NOT just list the sources or tell the user to visit them
+- Extract and present the key facts, news, and information from the content
+- When stating facts, cite the source naturally (e.g., "According to Reuters..." or "As reported by CNN...")
+- If sources contain conflicting information, acknowledge this
+- If the sources don't contain enough information to fully answer, say what you found and what's missing
 
-IMPORTANT: When referencing information from search results, naturally mention the source (e.g., "According to [source]..." or "As reported by [source]..."). You can also include the URL if it adds value.
-
-<search-results>
+<web-sources>
 ${searchResultsXml}
-</search-results>
+</web-sources>
 
-User query: ${originalQuery}`;
+User's question: ${originalQuery}
+
+Provide a direct, informative answer based on the sources above:`;
     
     return context;
   }
@@ -1184,14 +1385,22 @@ User query: ${originalQuery}`;
       const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral';
       
       if (isWebSearchEnabled() && supportsWebSearch) {
-        // Show spinner while searching
-        titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
+        // Show searching status
+        titleElement.innerHTML = '<span class="llm-search-spinner"></span> Searching the web...';
         
         console.log('[URLBar LLM] Web search enabled, searching...');
         const searchResults = await searchDuckDuckGo(query);
-        if (searchResults) {
-          searchContext = formatSearchResultsForLLM(searchResults, query);
-          console.log('[URLBar LLM] Web search completed, context added');
+        
+        if (searchResults && searchResults.length > 0) {
+          // Update status - fetching content
+          titleElement.innerHTML = '<span class="llm-search-spinner"></span> Reading sources...';
+          
+          // Fetch actual page content from search results
+          console.log('[URLBar LLM] Fetching page content from search results...');
+          const resultsWithContent = await fetchSearchResultsContent(searchResults, 3);
+          
+          searchContext = formatSearchResultsForLLM(resultsWithContent, query);
+          console.log('[URLBar LLM] Web search completed with page content');
         } else {
           console.log('[URLBar LLM] Web search returned no results');
         }
