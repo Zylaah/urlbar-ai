@@ -32,7 +32,7 @@
         model: "gpt-4"
       },
       ollama: {
-        name: "Ollama (Local)",
+        name: "Ollama",
         apiKey: null, // Not needed for local
         baseUrl: "http://localhost:11434/api/generate",
         model: "mistral"
