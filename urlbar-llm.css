@@ -73,35 +73,31 @@
   }
 }
 
-/* LLM mode glow animation - matching Zen's exact ::before setup */
-/* From zen-omnibox.css: #urlbar[breakout-extend="true"][animate-searchmode="true"]::before */
-#urlbar[llm-mode-active="true"][breakout-extend="true"][animate-searchmode="true"] {
-  /* Ensure positioning context for ::before */
+/* LLM mode glow animation on the provider pill */
+#urlbar[llm-mode-active="true"] #urlbar-label-box {
   position: relative;
 }
 
-#urlbar[llm-mode-active="true"][breakout-extend="true"][animate-searchmode="true"]::before {
+#urlbar[llm-mode-active="true"] #urlbar-label-box[animate-glow="true"]::before {
   position: absolute;
   content: "";
-  /* Only cover the top input area, not the expanded conversation container */
-  top: 0;
-  left: 0;
-  right: 0;
-  height: var(--urlbar-container-height, 48px);
-  border-radius: 12px;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
   pointer-events: none;
 }
 
-#urlbar[llm-provider="mistral"][breakout-extend="true"][animate-searchmode="true"]::before {
-  animation: llm-urlbar-glow-mistral ease-out 1s forwards !important;
+#urlbar[llm-provider="mistral"] #urlbar-label-box[animate-glow="true"]::before {
+  animation: llm-urlbar-glow-mistral ease-out 1s forwards;
 }
 
-#urlbar[llm-provider="openai"][breakout-extend="true"][animate-searchmode="true"]::before {
-  animation: llm-urlbar-glow-openai ease-out 1s forwards !important;
+#urlbar[llm-provider="openai"] #urlbar-label-box[animate-glow="true"]::before {
+  animation: llm-urlbar-glow-openai ease-out 1s forwards;
 }
 
-#urlbar[llm-provider="ollama"][breakout-extend="true"][animate-searchmode="true"]::before {
-  animation: llm-urlbar-glow-ollama ease-out 1s forwards !important;
+#urlbar[llm-provider="ollama"] #urlbar-label-box[animate-glow="true"]::before {
+  animation: llm-urlbar-glow-ollama ease-out 1s forwards;
 }
 
 /* LLM Result Row Styling - Use native Zen styling */

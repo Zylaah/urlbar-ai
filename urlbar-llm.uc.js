@@ -1128,64 +1128,54 @@ Provide a direct, informative answer based on the sources above:`;
   }
 
   /**
-   * Trigger Zen Browser's native search mode animation
-   * - Scale bounce: urlbar scales to 0.98 then back to 1
-   * - Glow effect: colored glow radiates outward from urlbar
+   * Trigger LLM mode activation animation
+   * - Scale bounce on the pill using Zen's motion library
+   * - Glow effect radiating from the provider pill
    */
   function triggerZenSearchModeAnimation(urlbar) {
     try {
-      // Check if Zen's motion library is available
-      const zenUI = window.gZenUIManager;
-      if (!zenUI || !zenUI.motion) {
-        console.log('[URLBar LLM] Zen motion library not available, skipping animation');
-        return;
-      }
-      
-      // Only animate if urlbar is in breakout/floating mode
-      if (!urlbar.hasAttribute("breakout-extend")) {
-        console.log('[URLBar LLM] Urlbar not in breakout mode, skipping animation');
+      const labelBox = document.getElementById("urlbar-label-box");
+      if (!labelBox) {
+        console.log('[URLBar LLM] Label box not found, skipping animation');
         return;
       }
       
       // Prevent double animation
-      if (urlbar._llmAnimating) {
+      if (labelBox._llmAnimating) {
         return;
       }
-      urlbar._llmAnimating = true;
+      labelBox._llmAnimating = true;
       
-      // Delay animation to allow urlbar to resize first
-      // (suggestions row hides when entering LLM mode, changing urlbar height)
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          // Small additional delay to ensure layout is stable
-          setTimeout(() => {
-            // 1. Scale bounce animation (same as Zen's search mode change)
-            zenUI.motion.animate(
-              urlbar, 
-              { scale: [1, 0.98, 1] }, 
-              { duration: 0.25 }
-            ).then(() => {
-              delete urlbar._llmAnimating;
-            });
-            
-            // 2. Glow effect via the animate-searchmode attribute
-            // This triggers the @keyframes CSS animation
-            urlbar.setAttribute("animate-searchmode", "true");
-            
-            // Remove the attribute after the animation completes (1 second)
-            setTimeout(() => {
-              requestAnimationFrame(() => {
-                urlbar.removeAttribute("animate-searchmode");
-              });
-            }, 1000);
-            
-            console.log('[URLBar LLM] Zen search mode animation triggered');
-          }, 50); // 50ms delay for layout to settle
+      // Check if Zen's motion library is available for scale bounce
+      const zenUI = window.gZenUIManager;
+      if (zenUI && zenUI.motion) {
+        // Scale bounce animation on the pill
+        zenUI.motion.animate(
+          labelBox, 
+          { scale: [0.8, 1.1, 1] }, 
+          { duration: 0.3, easing: "ease-out" }
+        ).then(() => {
+          delete labelBox._llmAnimating;
         });
-      });
+      } else {
+        delete labelBox._llmAnimating;
+      }
+      
+      // Glow effect via the animate-glow attribute on the pill
+      // This triggers the @keyframes CSS animation
+      labelBox.setAttribute("animate-glow", "true");
+      
+      // Remove the attribute after the animation completes (1 second)
+      setTimeout(() => {
+        requestAnimationFrame(() => {
+          labelBox.removeAttribute("animate-glow");
+        });
+      }, 1000);
+      
+      console.log('[URLBar LLM] Pill glow animation triggered');
       
     } catch (error) {
-      console.warn('[URLBar LLM] Failed to trigger Zen animation:', error);
+      console.warn('[URLBar LLM] Failed to trigger animation:', error);
     }
   }
 
