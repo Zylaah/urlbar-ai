@@ -119,6 +119,89 @@
     return getPref("extension.urlbar-llm.web-search-enabled", true);
   }
 
+  /**
+   * Use LLM to intelligently classify if a query needs web search
+   * Much smarter than regex patterns - the LLM understands context
+   */
+  async function queryNeedsWebSearch(query, provider) {
+    // Quick bypass for obvious cases (saves an API call)
+    const lowerQuery = query.toLowerCase().trim();
+    
+    // Obviously needs search - skip classification
+    if (/\b(latest|current|today'?s?|news|weather|stock price|election results)\b/.test(lowerQuery)) {
+      console.log('[URLBar LLM] Quick match: needs search');
+      return true;
+    }
+    
+    // Obviously doesn't need search - skip classification  
+    if (/^(hi|hello|hey|thanks|write me|create|generate|explain what|how does .* work)\b/.test(lowerQuery)) {
+      console.log('[URLBar LLM] Quick match: no search needed');
+      return false;
+    }
+    
+    // Use LLM to classify
+    try {
+      console.log('[URLBar LLM] Asking LLM to classify query...');
+      
+      const classificationPrompt = `Determine if this user query requires searching the internet for current/real-time information.
+
+Answer ONLY "SEARCH" or "NO_SEARCH" - nothing else.
+
+SEARCH if the query:
+- Asks about current events, news, or recent happenings
+- Needs real-time data (weather, prices, scores, stocks)
+- Asks about something that changes frequently
+- References specific dates, "today", "latest", "current", "recent"
+- Asks factual questions about current state of the world
+
+NO_SEARCH if the query:
+- Is a creative task (write, create, generate, compose)
+- Asks about timeless concepts, science, math, definitions
+- Is coding/programming help
+- Is conversational (greetings, thanks)
+- Asks about historical facts (not current events)
+- Is translation or text transformation
+- Can be answered with general knowledge
+
+Query: "${query}"
+
+Answer:`;
+
+      const response = await fetch(provider.baseUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${provider.apiKey}`
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [{ role: "user", content: classificationPrompt }],
+          max_tokens: 10,
+          temperature: 0
+        }),
+        signal: AbortSignal.timeout(3000) // 3 second timeout
+      });
+
+      if (!response.ok) {
+        console.warn('[URLBar LLM] Classification request failed, defaulting to no search');
+        return false;
+      }
+
+      const data = await response.json();
+      const answer = data.choices?.[0]?.message?.content?.trim().toUpperCase() || '';
+      
+      const needsSearch = answer.includes('SEARCH') && !answer.includes('NO_SEARCH');
+      console.log('[URLBar LLM] LLM classification:', answer, '-> needsSearch:', needsSearch);
+      
+      return needsSearch;
+      
+    } catch (error) {
+      // On timeout or error, default to no search (faster response)
+      console.warn('[URLBar LLM] Classification failed:', error.message, '- defaulting to no search');
+      return false;
+    }
+  }
+
   // Load API keys and config from preferences
   function loadConfig() {
     // Check if enabled
@@ -1379,16 +1462,23 @@ Provide a direct, informative answer based on the sources above:`;
     abortController = new AbortController();
 
     try {
-      // Perform web search if enabled (only for OpenAI and Mistral)
+      // Perform web search if enabled and query needs it
       let searchContext = null;
       const providerKey = urlbar.getAttribute("llm-provider");
       const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral';
       
+      let needsSearch = false;
       if (isWebSearchEnabled() && supportsWebSearch) {
+        // Let the LLM classify if web search is needed
+        titleElement.textContent = "Analyzing query...";
+        needsSearch = await queryNeedsWebSearch(query, currentProvider);
+      }
+      
+      if (needsSearch) {
         // Show searching status
-        titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
+        titleElement.innerHTML = '<span class="llm-search-spinner"></span> Searching the web...';
         
-        console.log('[URLBar LLM] Web search enabled, searching...');
+        console.log('[URLBar LLM] Web search triggered for query:', query);
         const searchResults = await searchDuckDuckGo(query);
         
         if (searchResults && searchResults.length > 0) {
