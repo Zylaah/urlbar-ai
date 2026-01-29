@@ -478,34 +478,67 @@
     try {
       console.log('[URLBar LLM] Searching DuckDuckGo for:', query);
       
-      // Use regular DuckDuckGo HTML search
-      const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      // Try DuckDuckGo Lite first (simpler HTML, more reliable parsing)
+      const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
       
-      // Use CORS proxy (direct fetch won't work due to CORS)
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`;
+      // List of CORS proxies to try in order
+      const corsProxies = [
+        (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+      ];
       
-      console.log('[URLBar LLM] Fetching via CORS proxy...');
-      const response = await fetch(proxyUrl);
+      let html = null;
+      let lastError = null;
       
-      if (!response.ok) {
-        console.error('[URLBar LLM] Proxy fetch failed:', response.status);
-        return null;
+      for (const proxyFn of corsProxies) {
+        try {
+          const proxyUrl = proxyFn(searchUrl);
+          console.log('[URLBar LLM] Trying proxy:', proxyUrl.substring(0, 50) + '...');
+          
+          const response = await fetch(proxyUrl, {
+            headers: {
+              'Accept': 'text/html,application/xhtml+xml',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/120.0'
+            }
+          });
+          
+          if (!response.ok) {
+            console.warn('[URLBar LLM] Proxy returned:', response.status);
+            continue;
+          }
+          
+          html = await response.text();
+          
+          if (html && html.length > 500 && !html.includes('error') && !html.includes('blocked')) {
+            console.log('[URLBar LLM] Got valid HTML response, length:', html.length);
+            break;
+          } else {
+            console.warn('[URLBar LLM] Invalid/short HTML from proxy, length:', html?.length);
+            html = null;
+          }
+        } catch (proxyError) {
+          console.warn('[URLBar LLM] Proxy failed:', proxyError.message);
+          lastError = proxyError;
+        }
       }
       
-      const html = await response.text();
-
-      if (!html || html.length < 100) {
-        console.error('[URLBar LLM] Invalid HTML response');
+      if (!html) {
+        console.error('[URLBar LLM] All proxies failed');
+        // Log first 500 chars of last response for debugging
+        if (html !== null) {
+          console.log('[URLBar LLM] Last response preview:', html.substring(0, 500));
+        }
         return null;
       }
-
-      console.log('[URLBar LLM] Got HTML response, length:', html.length);
       
       // Parse results from DuckDuckGo HTML
       const results = parseDuckDuckGoHTML(html, limit);
       
       if (results.length === 0) {
-        console.log('[URLBar LLM] No search results found');
+        console.log('[URLBar LLM] No search results found in HTML');
+        // Log HTML snippet for debugging
+        console.log('[URLBar LLM] HTML preview:', html.substring(0, 1000));
         return null;
       }
 
@@ -520,7 +553,7 @@
 
   /**
    * Parse DuckDuckGo HTML to extract search results
-   * Based on the hana project's implementation
+   * Supports both regular HTML and Lite versions
    */
   function parseDuckDuckGoHTML(html, limit) {
     try {
@@ -529,80 +562,147 @@
       
       const results = [];
       
-      // DuckDuckGo uses divs with class "result" or "results_links_deep"
-      const resultSelectors = [
-        'div.result',
-        'div.results_links_deep',
-        'div.web-result',
-        'div[class*="result"]'
-      ];
-      
-      let resultElements = [];
-      for (const selector of resultSelectors) {
-        resultElements = doc.querySelectorAll(selector);
-        if (resultElements.length > 0) {
-          console.log('[URLBar LLM] Found', resultElements.length, 'results using selector:', selector);
-          break;
-        }
-      }
-      
-      if (resultElements.length === 0) {
-        console.log('[URLBar LLM] No result containers found');
-        return [];
-      }
-      
-      for (const resultDiv of resultElements) {
-        if (results.length >= limit) break;
+      // Try DuckDuckGo Lite format first (table-based)
+      // Lite uses table rows with specific structure
+      const liteResults = doc.querySelectorAll('table:not(.header) tr');
+      if (liteResults.length > 0) {
+        console.log('[URLBar LLM] Trying Lite format, found', liteResults.length, 'table rows');
         
-        try {
-          // Find title link
-          const titleLink = resultDiv.querySelector('a.result__a, a[class*="result"], h2 a, .result__title a');
-          if (!titleLink) continue;
+        let currentResult = null;
+        
+        for (const row of liteResults) {
+          if (results.length >= limit) break;
           
-          const title = titleLink.textContent.trim();
-          let url = titleLink.getAttribute('href') || '';
-          
-          // Clean DuckDuckGo redirect URL
-          if (url.includes('//duckduckgo.com/l/?uddg=')) {
-            url = url.replace('//duckduckgo.com/l/?uddg=', '');
-            url = decodeURIComponent(url.split('&')[0]);
-          } else if (url.includes('uddg=')) {
-            const match = url.match(/uddg=([^&]+)/);
-            if (match) {
-              url = decodeURIComponent(match[1]);
+          // Look for link in row (title link)
+          const link = row.querySelector('a.result-link, a[href*="uddg="], td a[href]');
+          if (link) {
+            let url = link.getAttribute('href') || '';
+            const title = link.textContent.trim();
+            
+            // Clean DuckDuckGo redirect URL
+            url = cleanDDGUrl(url);
+            
+            if (url && title && !url.includes('duckduckgo.com') && url.startsWith('http')) {
+              currentResult = { title, url, snippet: title };
             }
           }
           
-          // Find snippet
-          const snippetElement = resultDiv.querySelector('a.result__snippet, .result__snippet, .snippet');
-          const snippet = snippetElement ? snippetElement.textContent.trim() : title;
-          
-          // Validate URL
-          if (!url.startsWith('http://') && !url.startsWith('https://')) {
-            console.log('[URLBar LLM] Skipping invalid URL:', url);
-            continue;
+          // Look for snippet (usually in following rows or same row)
+          const snippetCell = row.querySelector('td.result-snippet, td:not(:has(a))');
+          if (snippetCell && currentResult) {
+            const snippetText = snippetCell.textContent.trim();
+            if (snippetText && snippetText.length > 10 && !snippetText.startsWith('http')) {
+              currentResult.snippet = snippetText;
+            }
           }
           
-          // Skip DDG internal links
-          if (url.includes('duckduckgo.com')) {
+          // Commit result if we have URL and title
+          if (currentResult && currentResult.url && currentResult.title) {
+            try {
+              const urlObj = new URL(currentResult.url);
+              currentResult.source = urlObj.hostname.replace('www.', '');
+              results.push(currentResult);
+              console.log('[URLBar LLM] Found Lite result:', currentResult.title.substring(0, 40) + '...', '|', currentResult.source);
+            } catch (e) {
+              // Invalid URL
+            }
+            currentResult = null;
+          }
+        }
+      }
+      
+      // If Lite parsing failed, try regular HTML format
+      if (results.length === 0) {
+        console.log('[URLBar LLM] Trying regular HTML format...');
+        
+        // DuckDuckGo uses divs with class "result" or similar
+        const resultSelectors = [
+          'div.result',
+          'div.results_links_deep', 
+          'div.web-result',
+          'div.result--web',
+          '.result__body',
+          'div[class*="result"]'
+        ];
+        
+        let resultElements = [];
+        for (const selector of resultSelectors) {
+          resultElements = doc.querySelectorAll(selector);
+          if (resultElements.length > 0) {
+            console.log('[URLBar LLM] Found', resultElements.length, 'results using selector:', selector);
+            break;
+          }
+        }
+        
+        for (const resultDiv of resultElements) {
+          if (results.length >= limit) break;
+          
+          try {
+            // Find title link - try multiple selectors
+            const titleLink = resultDiv.querySelector('a.result__a, a.result-link, a[class*="result"], h2 a, .result__title a, a[href*="uddg="]');
+            if (!titleLink) continue;
+            
+            const title = titleLink.textContent.trim();
+            if (!title) continue;
+            
+            let url = titleLink.getAttribute('href') || '';
+            url = cleanDDGUrl(url);
+            
+            // Validate URL
+            if (!url || !url.startsWith('http') || url.includes('duckduckgo.com')) {
+              continue;
+            }
+            
+            // Find snippet
+            const snippetElement = resultDiv.querySelector('a.result__snippet, .result__snippet, .snippet, td.result-snippet');
+            const snippet = snippetElement ? snippetElement.textContent.trim() : title;
+            
+            const urlObj = new URL(url);
+            const source = urlObj.hostname.replace('www.', '');
+            
+            results.push({
+              title,
+              url,
+              snippet: snippet || title,
+              source
+            });
+            
+            console.log('[URLBar LLM] Found result:', title.substring(0, 40) + '...', '|', source);
+            
+          } catch (parseError) {
+            console.warn('[URLBar LLM] Error parsing individual result:', parseError);
             continue;
           }
+        }
+      }
+      
+      // Last resort: find any links that look like search results
+      if (results.length === 0) {
+        console.log('[URLBar LLM] Trying fallback link extraction...');
+        const allLinks = doc.querySelectorAll('a[href*="uddg="]');
+        console.log('[URLBar LLM] Found', allLinks.length, 'DDG redirect links');
+        
+        for (const link of allLinks) {
+          if (results.length >= limit) break;
           
-          const urlObj = new URL(url);
-          const source = urlObj.hostname.replace('www.', '');
+          let url = link.getAttribute('href') || '';
+          url = cleanDDGUrl(url);
           
-          results.push({
-            title,
-            url,
-            snippet: snippet || title,
-            source
-          });
-          
-          console.log('[URLBar LLM] Found result:', title.substring(0, 50) + '...', '|', source);
-          
-        } catch (parseError) {
-          console.warn('[URLBar LLM] Error parsing individual result:', parseError);
-          continue;
+          if (url && url.startsWith('http') && !url.includes('duckduckgo.com')) {
+            const title = link.textContent.trim() || url;
+            try {
+              const urlObj = new URL(url);
+              results.push({
+                title,
+                url,
+                snippet: title,
+                source: urlObj.hostname.replace('www.', '')
+              });
+              console.log('[URLBar LLM] Found fallback result:', title.substring(0, 40) + '...');
+            } catch (e) {
+              // Invalid URL
+            }
+          }
         }
       }
       
@@ -613,6 +713,28 @@
       console.error('[URLBar LLM] Failed to parse DuckDuckGo HTML:', error);
       return [];
     }
+  }
+  
+  /**
+   * Clean DuckDuckGo redirect URL to get actual target URL
+   */
+  function cleanDDGUrl(url) {
+    if (!url) return '';
+    
+    // Handle //duckduckgo.com/l/?uddg= format
+    if (url.includes('//duckduckgo.com/l/?uddg=')) {
+      url = url.replace(/.*\/\/duckduckgo\.com\/l\/\?uddg=/, '');
+      url = decodeURIComponent(url.split('&')[0]);
+    } 
+    // Handle uddg= parameter anywhere
+    else if (url.includes('uddg=')) {
+      const match = url.match(/uddg=([^&]+)/);
+      if (match) {
+        url = decodeURIComponent(match[1]);
+      }
+    }
+    
+    return url;
   }
 
   /**
