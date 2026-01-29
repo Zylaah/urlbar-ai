@@ -1063,7 +1063,7 @@ User query: ${originalQuery}`;
       
       if (isWebSearchEnabled() && supportsWebSearch) {
         // Show spinner while searching
-        titleElement.innerHTML = '<span class="llm-search-spinner"></span>Searching the web...';
+        titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
         
         console.log('[URLBar LLM] Web search enabled, searching...');
         const searchResults = await searchDuckDuckGo(query);
@@ -1077,6 +1077,7 @@ User query: ${originalQuery}`;
         console.log('[URLBar LLM] Web search not supported for provider:', providerKey);
       }
 
+      // Clear spinner and show thinking text
       titleElement.textContent = "Thinking...";
       
       // Prepare messages with search context if available

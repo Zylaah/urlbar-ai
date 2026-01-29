@@ -222,10 +222,9 @@
   display: inline-block;
   width: 12px;
   height: 12px;
-  background: var(--zen-primary-color);
+  background: light-dark(rgba(0, 0, 0, 0.3), rgba(255, 255, 255, 0.3));
   transform: rotate(45deg);
   animation: llm-spinner-rotate 1s linear infinite;
-  margin-right: 8px;
   vertical-align: middle;
 }
 
