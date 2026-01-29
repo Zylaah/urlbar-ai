@@ -541,34 +541,89 @@
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
       
-      // DuckDuckGo Lite uses table rows for results
-      const resultRows = doc.querySelectorAll('tr');
       const results = [];
       
-      for (const row of resultRows) {
+      // DuckDuckGo Lite uses multiple possible selectors
+      // Try different approaches to find results
+      
+      // Approach 1: Look for links with specific patterns
+      const allLinks = doc.querySelectorAll('a');
+      console.log('[URLBar LLM] Found', allLinks.length, 'total links');
+      
+      for (const link of allLinks) {
         if (results.length >= limit) break;
         
-        // Look for result links (class="result-link")
-        const link = row.querySelector('a.result-link');
-        if (!link) continue;
+        const href = link.getAttribute('href') || '';
+        const text = link.textContent.trim();
         
-        const url = link.href;
-        const title = link.textContent.trim();
+        // Filter for actual result links (not navigation, ads, etc.)
+        if (!href || !text) continue;
+        if (href.includes('duckduckgo.com')) continue; // Skip DDG internal links
+        if (text.length < 10) continue; // Skip short/meaningless links
+        if (href.startsWith('//')) continue; // Skip protocol-relative links
         
-        // Get snippet from the next table cell
-        const snippetCell = row.querySelector('td.result-snippet');
-        const snippet = snippetCell ? snippetCell.textContent.trim() : '';
+        // Look for uddg parameter (DuckDuckGo redirect format)
+        let finalUrl = href;
+        if (href.includes('uddg=')) {
+          const match = href.match(/uddg=([^&]+)/);
+          if (match) {
+            try {
+              finalUrl = decodeURIComponent(match[1]);
+            } catch (e) {
+              continue;
+            }
+          }
+        }
         
-        if (title && url && url.startsWith('http')) {
+        // Must be a valid HTTP(S) URL
+        if (!finalUrl.startsWith('http://') && !finalUrl.startsWith('https://')) {
+          continue;
+        }
+        
+        // Try to find snippet - look at parent elements
+        let snippet = '';
+        let currentElement = link.parentElement;
+        let depth = 0;
+        
+        // Search up to 3 levels up for snippet text
+        while (currentElement && depth < 3) {
+          const textNodes = Array.from(currentElement.childNodes)
+            .filter(node => node.nodeType === Node.TEXT_NODE || node.nodeName === 'TD' || node.nodeName === 'SPAN')
+            .map(node => node.textContent.trim())
+            .filter(text => text.length > 20)
+            .join(' ');
+          
+          if (textNodes.length > snippet.length) {
+            snippet = textNodes;
+          }
+          
+          currentElement = currentElement.parentElement;
+          depth++;
+        }
+        
+        // Clean up snippet
+        snippet = snippet.replace(/\s+/g, ' ').trim();
+        if (snippet.length > 300) {
+          snippet = snippet.substring(0, 300) + '...';
+        }
+        
+        try {
+          const url = new URL(finalUrl);
           results.push({
-            title,
-            url,
-            snippet: snippet || title,
-            source: new URL(url).hostname.replace('www.', '')
+            title: text,
+            url: finalUrl,
+            snippet: snippet || text,
+            source: url.hostname.replace('www.', '')
           });
+          
+          console.log('[URLBar LLM] Found result:', text.substring(0, 50), '...', finalUrl);
+        } catch (urlError) {
+          console.warn('[URLBar LLM] Invalid URL:', finalUrl);
+          continue;
         }
       }
       
+      console.log('[URLBar LLM] Parsed', results.length, 'results from HTML');
       return results;
     } catch (error) {
       console.error('[URLBar LLM] Failed to parse DuckDuckGo HTML:', error);
