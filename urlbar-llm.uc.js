@@ -114,6 +114,11 @@
     return getPref("extension.urlbar-llm.enabled", true);
   }
 
+  // Check if web search is enabled
+  function isWebSearchEnabled() {
+    return getPref("extension.urlbar-llm.web-search-enabled", true);
+  }
+
   // Load API keys and config from preferences
   function loadConfig() {
     // Check if enabled
@@ -459,6 +464,119 @@
       .replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;')
       .replace(/'/g, '&#039;');
+  }
+
+  /**
+   * Search DuckDuckGo Instant Answer API
+   */
+  async function searchDuckDuckGo(query) {
+    if (!isWebSearchEnabled()) {
+      return null;
+    }
+
+    try {
+      console.log('[URLBar LLM] Searching DuckDuckGo for:', query);
+      
+      const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.error('[URLBar LLM] DuckDuckGo API error:', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      console.log('[URLBar LLM] DuckDuckGo response:', data);
+      
+      // Extract useful information
+      const searchResults = {
+        abstract: data.Abstract || '',
+        abstractText: data.AbstractText || '',
+        abstractSource: data.AbstractSource || '',
+        abstractURL: data.AbstractURL || '',
+        definition: data.Definition || '',
+        definitionSource: data.DefinitionSource || '',
+        definitionURL: data.DefinitionURL || '',
+        relatedTopics: (data.RelatedTopics || [])
+          .filter(topic => topic.Text && topic.FirstURL)
+          .slice(0, 5)
+          .map(topic => ({
+            text: topic.Text,
+            url: topic.FirstURL
+          })),
+        answer: data.Answer || '',
+        type: data.Type || 'Unknown'
+      };
+
+      // Check if we got any useful data
+      const hasData = searchResults.abstract || 
+                     searchResults.definition || 
+                     searchResults.answer || 
+                     searchResults.relatedTopics.length > 0;
+
+      if (!hasData) {
+        console.log('[URLBar LLM] No useful data from DuckDuckGo');
+        return null;
+      }
+
+      return searchResults;
+    } catch (error) {
+      console.error('[URLBar LLM] DuckDuckGo search failed:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Format search results for LLM context
+   */
+  function formatSearchResultsForLLM(searchResults, originalQuery) {
+    if (!searchResults) {
+      return null;
+    }
+
+    const currentDateTime = new Date().toLocaleString();
+    let context = `Web Search Results (via DuckDuckGo) for "${originalQuery}" - Current date/time: ${currentDateTime}\n\n`;
+
+    if (searchResults.abstract) {
+      context += `Summary: ${searchResults.abstract}\n`;
+      if (searchResults.abstractSource) {
+        context += `Source: ${searchResults.abstractSource}\n`;
+      }
+      if (searchResults.abstractURL) {
+        context += `URL: ${searchResults.abstractURL}\n`;
+      }
+      context += '\n';
+    }
+
+    if (searchResults.definition) {
+      context += `Definition: ${searchResults.definition}\n`;
+      if (searchResults.definitionSource) {
+        context += `Source: ${searchResults.definitionSource}\n`;
+      }
+      context += '\n';
+    }
+
+    if (searchResults.answer) {
+      context += `Quick Answer: ${searchResults.answer}\n\n`;
+    }
+
+    if (searchResults.relatedTopics.length > 0) {
+      context += `Related Information:\n`;
+      searchResults.relatedTopics.forEach((topic, index) => {
+        context += `${index + 1}. ${topic.text}\n   URL: ${topic.url}\n`;
+      });
+      context += '\n';
+    }
+
+    context += `---\n\nPlease answer the user's question using the above web search results as context. If the search results are relevant, incorporate them into your response. Include source URLs when referencing specific information.\n\n`;
+    
+    return context;
   }
 
   function activateLLMMode(urlbar, urlbarInput, providerKey) {
@@ -857,7 +975,7 @@
 
     // Set thinking state
     urlbar.setAttribute("is-llm-thinking", "true");
-    titleElement.textContent = "Thinking...";
+    titleElement.textContent = "Searching the web...";
 
     // Abort any previous request
     if (abortController) {
@@ -866,14 +984,50 @@
     abortController = new AbortController();
 
     try {
+      // Perform web search if enabled (only for OpenAI and Mistral)
+      let searchContext = null;
+      const providerKey = urlbar.getAttribute("llm-provider");
+      const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral';
+      
+      if (isWebSearchEnabled() && supportsWebSearch) {
+        console.log('[URLBar LLM] Web search enabled, searching...');
+        const searchResults = await searchDuckDuckGo(query);
+        if (searchResults) {
+          searchContext = formatSearchResultsForLLM(searchResults, query);
+          console.log('[URLBar LLM] Web search completed, context added');
+        } else {
+          console.log('[URLBar LLM] Web search returned no results');
+        }
+      } else if (!supportsWebSearch && isWebSearchEnabled()) {
+        console.log('[URLBar LLM] Web search not supported for provider:', providerKey);
+      }
+
+      titleElement.textContent = "Thinking...";
+      
+      // Prepare messages with search context if available
+      let messagesToSend = conversationHistory;
+      if (searchContext) {
+        // Insert search context as a system message before the last user message
+        const lastUserMessageIndex = conversationHistory.length - 1;
+        messagesToSend = [
+          ...conversationHistory.slice(0, lastUserMessageIndex),
+          {
+            role: "system",
+            content: searchContext
+          },
+          conversationHistory[lastUserMessageIndex]
+        ];
+        console.log('[URLBar LLM] Added web search context to messages');
+      }
+      
       let accumulatedText = "";
       
       if (currentProvider.name === "Ollama (Local)") {
         // Ollama uses different API format
-        await streamOllamaResponse(conversationHistory, titleElement, abortController.signal);
+        await streamOllamaResponse(messagesToSend, titleElement, abortController.signal);
       } else {
         // Standard OpenAI-compatible API (works for OpenAI, Mistral, Gemini)
-        await streamOpenAIResponse(conversationHistory, titleElement, abortController.signal);
+        await streamOpenAIResponse(messagesToSend, titleElement, abortController.signal);
       }
       
       // Add assistant's response to conversation history
