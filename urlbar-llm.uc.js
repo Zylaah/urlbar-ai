@@ -1129,50 +1129,39 @@ Provide a direct, informative answer based on the sources above:`;
 
   /**
    * Trigger LLM mode activation animation
-   * - Scale bounce on the pill using Zen's motion library
+   * - Scale/pulse effect on the urlbar (like Zen's native animation)
    * - Glow effect radiating from the provider pill
    */
   function triggerZenSearchModeAnimation(urlbar) {
     try {
-      const labelBox = document.getElementById("urlbar-label-box");
-      if (!labelBox) {
-        console.log('[URLBar LLM] Label box not found, skipping animation');
-        return;
-      }
-      
-      // Prevent double animation
-      if (labelBox._llmAnimating) {
-        return;
-      }
-      labelBox._llmAnimating = true;
-      
-      // Check if Zen's motion library is available for scale bounce
+      // Check if Zen's motion library is available
       const zenUI = window.gZenUIManager;
-      if (zenUI && zenUI.motion) {
-        // Scale bounce animation on the pill
+      
+      // 1. Scale/pulse animation on the urlbar
+      if (zenUI && zenUI.motion && urlbar.hasAttribute("breakout-extend")) {
         zenUI.motion.animate(
-          labelBox, 
-          { scale: [0.8, 1.1, 1] }, 
-          { duration: 0.3, easing: "ease-out" }
-        ).then(() => {
-          delete labelBox._llmAnimating;
-        });
-      } else {
-        delete labelBox._llmAnimating;
+          urlbar, 
+          { scale: [1, 0.98, 1] }, 
+          { duration: 0.25 }
+        );
+        console.log('[URLBar LLM] Urlbar pulse animation triggered');
       }
       
-      // Glow effect via the animate-glow attribute on the pill
-      // This triggers the @keyframes CSS animation
-      labelBox.setAttribute("animate-glow", "true");
-      
-      // Remove the attribute after the animation completes (1 second)
-      setTimeout(() => {
-        requestAnimationFrame(() => {
-          labelBox.removeAttribute("animate-glow");
-        });
-      }, 1000);
-      
-      console.log('[URLBar LLM] Pill glow animation triggered');
+      // 2. Glow effect on the pill
+      const labelBox = document.getElementById("urlbar-label-box");
+      if (labelBox) {
+        // Trigger glow animation via CSS attribute
+        labelBox.setAttribute("animate-glow", "true");
+        
+        // Remove the attribute after the animation completes (1 second)
+        setTimeout(() => {
+          requestAnimationFrame(() => {
+            labelBox.removeAttribute("animate-glow");
+          });
+        }, 1000);
+        
+        console.log('[URLBar LLM] Pill glow animation triggered');
+      }
       
     } catch (error) {
       console.warn('[URLBar LLM] Failed to trigger animation:', error);
