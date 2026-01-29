@@ -1153,27 +1153,36 @@ Provide a direct, informative answer based on the sources above:`;
       }
       urlbar._llmAnimating = true;
       
-      // 1. Scale bounce animation (same as Zen's search mode change)
-      zenUI.motion.animate(
-        urlbar, 
-        { scale: [1, 0.98, 1] }, 
-        { duration: 0.25 }
-      ).then(() => {
-        delete urlbar._llmAnimating;
-      });
-      
-      // 2. Glow effect via the animate-searchmode attribute
-      // This triggers the @keyframes zen-urlbar-searchmode CSS animation
-      urlbar.setAttribute("animate-searchmode", "true");
-      
-      // Remove the attribute after the animation completes (1 second)
-      setTimeout(() => {
+      // Delay animation to allow urlbar to resize first
+      // (suggestions row hides when entering LLM mode, changing urlbar height)
+      requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          urlbar.removeAttribute("animate-searchmode");
+          // Small additional delay to ensure layout is stable
+          setTimeout(() => {
+            // 1. Scale bounce animation (same as Zen's search mode change)
+            zenUI.motion.animate(
+              urlbar, 
+              { scale: [1, 0.98, 1] }, 
+              { duration: 0.25 }
+            ).then(() => {
+              delete urlbar._llmAnimating;
+            });
+            
+            // 2. Glow effect via the animate-searchmode attribute
+            // This triggers the @keyframes CSS animation
+            urlbar.setAttribute("animate-searchmode", "true");
+            
+            // Remove the attribute after the animation completes (1 second)
+            setTimeout(() => {
+              requestAnimationFrame(() => {
+                urlbar.removeAttribute("animate-searchmode");
+              });
+            }, 1000);
+            
+            console.log('[URLBar LLM] Zen search mode animation triggered');
+          }, 50); // 50ms delay for layout to settle
         });
-      }, 1000);
-      
-      console.log('[URLBar LLM] Zen search mode animation triggered');
+      });
       
     } catch (error) {
       console.warn('[URLBar LLM] Failed to trigger Zen animation:', error);
