@@ -38,6 +38,13 @@
   background: linear-gradient(135deg, #000000 0%, #434343 100%) !important;
 }
 
+/* Hide suggestions when in LLM mode - controlled by preference */
+@media -moz-pref("extension.urlbar-llm.hide-suggestions") {
+  #urlbar[llm-mode-active="true"] .urlbarView:not(:has(.urlbarView-row-llm)) {
+    display: none !important;
+  }
+}
+
 /* LLM Result Row Styling - Use native Zen styling */
 .urlbarView-row-llm {
   /* Use native Zen row styling */
@@ -207,6 +214,27 @@
   }
   100% {
     background-position: 200% 0;
+  }
+}
+
+/* Web search spinner - rotating diamond */
+.llm-search-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  background: var(--zen-primary-color);
+  transform: rotate(45deg);
+  animation: llm-spinner-rotate 1s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes llm-spinner-rotate {
+  0% {
+    transform: rotate(45deg);
+  }
+  100% {
+    transform: rotate(405deg);
   }
 }
 

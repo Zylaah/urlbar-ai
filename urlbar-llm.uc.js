@@ -1048,7 +1048,6 @@ User query: ${originalQuery}`;
 
     // Set thinking state
     urlbar.setAttribute("is-llm-thinking", "true");
-    titleElement.textContent = "Searching the web...";
 
     // Abort any previous request
     if (abortController) {
@@ -1063,6 +1062,9 @@ User query: ${originalQuery}`;
       const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral';
       
       if (isWebSearchEnabled() && supportsWebSearch) {
+        // Show spinner while searching
+        titleElement.innerHTML = '<span class="llm-search-spinner"></span>Searching the web...';
+        
         console.log('[URLBar LLM] Web search enabled, searching...');
         const searchResults = await searchDuckDuckGo(query);
         if (searchResults) {
