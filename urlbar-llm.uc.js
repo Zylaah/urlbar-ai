@@ -1385,11 +1385,15 @@ Provide a direct, informative answer based on the sources above:`;
       const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral';
       
       if (isWebSearchEnabled() && supportsWebSearch) {
-
+        // Show searching status
+        titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
+        
         console.log('[URLBar LLM] Web search enabled, searching...');
         const searchResults = await searchDuckDuckGo(query);
         
         if (searchResults && searchResults.length > 0) {
+          // Update status - fetching content
+          titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
           
           // Fetch actual page content from search results
           console.log('[URLBar LLM] Fetching page content from search results...');
