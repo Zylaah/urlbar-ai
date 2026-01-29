@@ -23,7 +23,7 @@
 
 /* Provider-specific pill colors */
 #urlbar[llm-provider="mistral"] #urlbar-label-box {
-  background: linear-gradient(135deg, #ff7000 0%, #ff9a00 100%) !important;
+  background: linear-gradient(135deg,rgb(250, 80, 15) 0%,rgb(255, 113, 15) 100%) !important;
 }
 
 #urlbar[llm-provider="openai"] #urlbar-label-box {
@@ -35,7 +35,7 @@
 }
 
 #urlbar[llm-provider="ollama"] #urlbar-label-box {
-  background: linear-gradient(135deg, #000000 0%, #434343 100%) !important;
+  background: linear-gradient(135deg,rgb(255, 255, 255) 0%,rgb(214, 214, 214) 100%) !important;
 }
 
 
