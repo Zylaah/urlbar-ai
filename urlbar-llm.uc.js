@@ -20,7 +20,7 @@
   const CONFIG = {
     providers: {
       mistral: {
-        name: "Mistral",
+        name: "Mistral AI",
         apiKey: "", // Set via about:config or prompt
         baseUrl: "https://api.mistral.ai/v1/chat/completions",
         model: "mistral-medium-latest"
@@ -32,12 +32,12 @@
         model: "gpt-4"
       },
       ollama: {
-        name: "Ollama",
+        name: "Ollama (Local)",
         apiKey: null, // Not needed for local
         baseUrl: "http://localhost:11434/api/generate",
         model: "mistral"
       }
-      // Gemini temporarily disabled
+      // Gemini temporarily disabled - OpenAI-compatible API not yet available
       // gemini: {
       //   name: "Google Gemini",
       //   apiKey: "",
@@ -119,89 +119,6 @@
     return getPref("extension.urlbar-llm.web-search-enabled", true);
   }
 
-  /**
-   * Use LLM to intelligently classify if a query needs web search
-   * Much smarter than regex patterns - the LLM understands context
-   */
-  async function queryNeedsWebSearch(query, provider) {
-    // Quick bypass for obvious cases (saves an API call)
-    const lowerQuery = query.toLowerCase().trim();
-    
-    // Obviously needs search - skip classification
-    if (/\b(latest|current|today'?s?|news|weather|stock price|election results)\b/.test(lowerQuery)) {
-      console.log('[URLBar LLM] Quick match: needs search');
-      return true;
-    }
-    
-    // Obviously doesn't need search - skip classification  
-    if (/^(hi|hello|hey|thanks|write me|create|generate|explain what|how does .* work)\b/.test(lowerQuery)) {
-      console.log('[URLBar LLM] Quick match: no search needed');
-      return false;
-    }
-    
-    // Use LLM to classify
-    try {
-      console.log('[URLBar LLM] Asking LLM to classify query...');
-      
-      const classificationPrompt = `Determine if this user query requires searching the internet for current/real-time information.
-
-Answer ONLY "SEARCH" or "NO_SEARCH" - nothing else.
-
-SEARCH if the query:
-- Asks about current events, news, or recent happenings
-- Needs real-time data (weather, prices, scores, stocks)
-- Asks about something that changes frequently
-- References specific dates, "today", "latest", "current", "recent"
-- Asks factual questions about current state of the world
-
-NO_SEARCH if the query:
-- Is a creative task (write, create, generate, compose)
-- Asks about timeless concepts, science, math, definitions
-- Is coding/programming help
-- Is conversational (greetings, thanks)
-- Asks about historical facts (not current events)
-- Is translation or text transformation
-- Can be answered with general knowledge
-
-Query: "${query}"
-
-Answer:`;
-
-      const response = await fetch(provider.baseUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${provider.apiKey}`
-        },
-        body: JSON.stringify({
-          model: provider.model,
-          messages: [{ role: "user", content: classificationPrompt }],
-          max_tokens: 10,
-          temperature: 0
-        }),
-        signal: AbortSignal.timeout(3000) // 3 second timeout
-      });
-
-      if (!response.ok) {
-        console.warn('[URLBar LLM] Classification request failed, defaulting to no search');
-        return false;
-      }
-
-      const data = await response.json();
-      const answer = data.choices?.[0]?.message?.content?.trim().toUpperCase() || '';
-      
-      const needsSearch = answer.includes('SEARCH') && !answer.includes('NO_SEARCH');
-      console.log('[URLBar LLM] LLM classification:', answer, '-> needsSearch:', needsSearch);
-      
-      return needsSearch;
-      
-    } catch (error) {
-      // On timeout or error, default to no search (faster response)
-      console.warn('[URLBar LLM] Classification failed:', error.message, '- defaulting to no search');
-      return false;
-    }
-  }
-
   // Load API keys and config from preferences
   function loadConfig() {
     // Check if enabled
@@ -224,7 +141,7 @@ Answer:`;
     // Load Ollama base URL
     CONFIG.providers.ollama.baseUrl = getPref(
       "extension.urlbar-llm.ollama-base-url",
-      "http://localhost:11434/api"
+      "http://localhost:11434/api/generate"
     );
   }
 
@@ -561,67 +478,34 @@ Answer:`;
     try {
       console.log('[URLBar LLM] Searching DuckDuckGo for:', query);
       
-      // Try DuckDuckGo Lite first (simpler HTML, more reliable parsing)
-      const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
+      // Use regular DuckDuckGo HTML search
+      const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
       
-      // List of CORS proxies to try in order
-      const corsProxies = [
-        (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
-      ];
+      // Use CORS proxy (direct fetch won't work due to CORS)
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`;
       
-      let html = null;
-      let lastError = null;
+      console.log('[URLBar LLM] Fetching via CORS proxy...');
+      const response = await fetch(proxyUrl);
       
-      for (const proxyFn of corsProxies) {
-        try {
-          const proxyUrl = proxyFn(searchUrl);
-          console.log('[URLBar LLM] Trying proxy:', proxyUrl.substring(0, 50) + '...');
-          
-          const response = await fetch(proxyUrl, {
-            headers: {
-              'Accept': 'text/html,application/xhtml+xml',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/120.0'
-            }
-          });
-          
-          if (!response.ok) {
-            console.warn('[URLBar LLM] Proxy returned:', response.status);
-            continue;
-          }
-          
-          html = await response.text();
-          
-          if (html && html.length > 500 && !html.includes('error') && !html.includes('blocked')) {
-            console.log('[URLBar LLM] Got valid HTML response, length:', html.length);
-            break;
-          } else {
-            console.warn('[URLBar LLM] Invalid/short HTML from proxy, length:', html?.length);
-            html = null;
-          }
-        } catch (proxyError) {
-          console.warn('[URLBar LLM] Proxy failed:', proxyError.message);
-          lastError = proxyError;
-        }
-      }
-      
-      if (!html) {
-        console.error('[URLBar LLM] All proxies failed');
-        // Log first 500 chars of last response for debugging
-        if (html !== null) {
-          console.log('[URLBar LLM] Last response preview:', html.substring(0, 500));
-        }
+      if (!response.ok) {
+        console.error('[URLBar LLM] Proxy fetch failed:', response.status);
         return null;
       }
+      
+      const html = await response.text();
+
+      if (!html || html.length < 100) {
+        console.error('[URLBar LLM] Invalid HTML response');
+        return null;
+      }
+
+      console.log('[URLBar LLM] Got HTML response, length:', html.length);
       
       // Parse results from DuckDuckGo HTML
       const results = parseDuckDuckGoHTML(html, limit);
       
       if (results.length === 0) {
-        console.log('[URLBar LLM] No search results found in HTML');
-        // Log HTML snippet for debugging
-        console.log('[URLBar LLM] HTML preview:', html.substring(0, 1000));
+        console.log('[URLBar LLM] No search results found');
         return null;
       }
 
@@ -636,7 +520,7 @@ Answer:`;
 
   /**
    * Parse DuckDuckGo HTML to extract search results
-   * Supports both regular HTML and Lite versions
+   * Based on the hana project's implementation
    */
   function parseDuckDuckGoHTML(html, limit) {
     try {
@@ -645,147 +529,80 @@ Answer:`;
       
       const results = [];
       
-      // Try DuckDuckGo Lite format first (table-based)
-      // Lite uses table rows with specific structure
-      const liteResults = doc.querySelectorAll('table:not(.header) tr');
-      if (liteResults.length > 0) {
-        console.log('[URLBar LLM] Trying Lite format, found', liteResults.length, 'table rows');
-        
-        let currentResult = null;
-        
-        for (const row of liteResults) {
-          if (results.length >= limit) break;
-          
-          // Look for link in row (title link)
-          const link = row.querySelector('a.result-link, a[href*="uddg="], td a[href]');
-          if (link) {
-            let url = link.getAttribute('href') || '';
-            const title = link.textContent.trim();
-            
-            // Clean DuckDuckGo redirect URL
-            url = cleanDDGUrl(url);
-            
-            if (url && title && !url.includes('duckduckgo.com') && url.startsWith('http')) {
-              currentResult = { title, url, snippet: title };
-            }
-          }
-          
-          // Look for snippet (usually in following rows or same row)
-          const snippetCell = row.querySelector('td.result-snippet, td:not(:has(a))');
-          if (snippetCell && currentResult) {
-            const snippetText = snippetCell.textContent.trim();
-            if (snippetText && snippetText.length > 10 && !snippetText.startsWith('http')) {
-              currentResult.snippet = snippetText;
-            }
-          }
-          
-          // Commit result if we have URL and title
-          if (currentResult && currentResult.url && currentResult.title) {
-            try {
-              const urlObj = new URL(currentResult.url);
-              currentResult.source = urlObj.hostname.replace('www.', '');
-              results.push(currentResult);
-              console.log('[URLBar LLM] Found Lite result:', currentResult.title.substring(0, 40) + '...', '|', currentResult.source);
-            } catch (e) {
-              // Invalid URL
-            }
-            currentResult = null;
-          }
+      // DuckDuckGo uses divs with class "result" or "results_links_deep"
+      const resultSelectors = [
+        'div.result',
+        'div.results_links_deep',
+        'div.web-result',
+        'div[class*="result"]'
+      ];
+      
+      let resultElements = [];
+      for (const selector of resultSelectors) {
+        resultElements = doc.querySelectorAll(selector);
+        if (resultElements.length > 0) {
+          console.log('[URLBar LLM] Found', resultElements.length, 'results using selector:', selector);
+          break;
         }
       }
       
-      // If Lite parsing failed, try regular HTML format
-      if (results.length === 0) {
-        console.log('[URLBar LLM] Trying regular HTML format...');
+      if (resultElements.length === 0) {
+        console.log('[URLBar LLM] No result containers found');
+        return [];
+      }
+      
+      for (const resultDiv of resultElements) {
+        if (results.length >= limit) break;
         
-        // DuckDuckGo uses divs with class "result" or similar
-        const resultSelectors = [
-          'div.result',
-          'div.results_links_deep', 
-          'div.web-result',
-          'div.result--web',
-          '.result__body',
-          'div[class*="result"]'
-        ];
-        
-        let resultElements = [];
-        for (const selector of resultSelectors) {
-          resultElements = doc.querySelectorAll(selector);
-          if (resultElements.length > 0) {
-            console.log('[URLBar LLM] Found', resultElements.length, 'results using selector:', selector);
-            break;
-          }
-        }
-        
-        for (const resultDiv of resultElements) {
-          if (results.length >= limit) break;
+        try {
+          // Find title link
+          const titleLink = resultDiv.querySelector('a.result__a, a[class*="result"], h2 a, .result__title a');
+          if (!titleLink) continue;
           
-          try {
-            // Find title link - try multiple selectors
-            const titleLink = resultDiv.querySelector('a.result__a, a.result-link, a[class*="result"], h2 a, .result__title a, a[href*="uddg="]');
-            if (!titleLink) continue;
-            
-            const title = titleLink.textContent.trim();
-            if (!title) continue;
-            
-            let url = titleLink.getAttribute('href') || '';
-            url = cleanDDGUrl(url);
-            
-            // Validate URL
-            if (!url || !url.startsWith('http') || url.includes('duckduckgo.com')) {
-              continue;
+          const title = titleLink.textContent.trim();
+          let url = titleLink.getAttribute('href') || '';
+          
+          // Clean DuckDuckGo redirect URL
+          if (url.includes('//duckduckgo.com/l/?uddg=')) {
+            url = url.replace('//duckduckgo.com/l/?uddg=', '');
+            url = decodeURIComponent(url.split('&')[0]);
+          } else if (url.includes('uddg=')) {
+            const match = url.match(/uddg=([^&]+)/);
+            if (match) {
+              url = decodeURIComponent(match[1]);
             }
-            
-            // Find snippet
-            const snippetElement = resultDiv.querySelector('a.result__snippet, .result__snippet, .snippet, td.result-snippet');
-            const snippet = snippetElement ? snippetElement.textContent.trim() : title;
-            
-            const urlObj = new URL(url);
-            const source = urlObj.hostname.replace('www.', '');
-            
-            results.push({
-              title,
-              url,
-              snippet: snippet || title,
-              source
-            });
-            
-            console.log('[URLBar LLM] Found result:', title.substring(0, 40) + '...', '|', source);
-            
-          } catch (parseError) {
-            console.warn('[URLBar LLM] Error parsing individual result:', parseError);
+          }
+          
+          // Find snippet
+          const snippetElement = resultDiv.querySelector('a.result__snippet, .result__snippet, .snippet');
+          const snippet = snippetElement ? snippetElement.textContent.trim() : title;
+          
+          // Validate URL
+          if (!url.startsWith('http://') && !url.startsWith('https://')) {
+            console.log('[URLBar LLM] Skipping invalid URL:', url);
             continue;
           }
-        }
-      }
-      
-      // Last resort: find any links that look like search results
-      if (results.length === 0) {
-        console.log('[URLBar LLM] Trying fallback link extraction...');
-        const allLinks = doc.querySelectorAll('a[href*="uddg="]');
-        console.log('[URLBar LLM] Found', allLinks.length, 'DDG redirect links');
-        
-        for (const link of allLinks) {
-          if (results.length >= limit) break;
           
-          let url = link.getAttribute('href') || '';
-          url = cleanDDGUrl(url);
-          
-          if (url && url.startsWith('http') && !url.includes('duckduckgo.com')) {
-            const title = link.textContent.trim() || url;
-            try {
-              const urlObj = new URL(url);
-              results.push({
-                title,
-                url,
-                snippet: title,
-                source: urlObj.hostname.replace('www.', '')
-              });
-              console.log('[URLBar LLM] Found fallback result:', title.substring(0, 40) + '...');
-            } catch (e) {
-              // Invalid URL
-            }
+          // Skip DDG internal links
+          if (url.includes('duckduckgo.com')) {
+            continue;
           }
+          
+          const urlObj = new URL(url);
+          const source = urlObj.hostname.replace('www.', '');
+          
+          results.push({
+            title,
+            url,
+            snippet: snippet || title,
+            source
+          });
+          
+          console.log('[URLBar LLM] Found result:', title.substring(0, 50) + '...', '|', source);
+          
+        } catch (parseError) {
+          console.warn('[URLBar LLM] Error parsing individual result:', parseError);
+          continue;
         }
       }
       
@@ -797,224 +614,10 @@ Answer:`;
       return [];
     }
   }
-  
-  /**
-   * Clean DuckDuckGo redirect URL to get actual target URL
-   */
-  function cleanDDGUrl(url) {
-    if (!url) return '';
-    
-    // Handle //duckduckgo.com/l/?uddg= format
-    if (url.includes('//duckduckgo.com/l/?uddg=')) {
-      url = url.replace(/.*\/\/duckduckgo\.com\/l\/\?uddg=/, '');
-      url = decodeURIComponent(url.split('&')[0]);
-    } 
-    // Handle uddg= parameter anywhere
-    else if (url.includes('uddg=')) {
-      const match = url.match(/uddg=([^&]+)/);
-      if (match) {
-        url = decodeURIComponent(match[1]);
-      }
-    }
-    
-    return url;
-  }
-
-  /**
-   * Fetch and extract main content from a webpage
-   * @param {string} url - The URL to fetch
-   * @param {number} maxLength - Maximum content length to return
-   * @returns {Promise<string|null>} - Extracted text content or null
-   */
-  async function fetchPageContent(url, maxLength = 4000) {
-    try {
-      console.log('[URLBar LLM] Fetching page content:', url);
-      
-      // Use CORS proxy
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-      
-      const response = await fetch(proxyUrl, {
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/120.0'
-        }
-      });
-      
-      if (!response.ok) {
-        console.warn('[URLBar LLM] Failed to fetch page:', response.status);
-        return null;
-      }
-      
-      const html = await response.text();
-      if (!html || html.length < 100) {
-        return null;
-      }
-      
-      // Parse and extract main content
-      const content = extractMainContent(html);
-      
-      if (!content || content.length < 50) {
-        console.warn('[URLBar LLM] No meaningful content extracted from:', url);
-        return null;
-      }
-      
-      // Truncate if too long
-      const truncated = content.length > maxLength 
-        ? content.substring(0, maxLength) + '...[truncated]'
-        : content;
-      
-      console.log('[URLBar LLM] Extracted', truncated.length, 'chars from:', url);
-      return truncated;
-      
-    } catch (error) {
-      console.warn('[URLBar LLM] Error fetching page content:', error.message);
-      return null;
-    }
-  }
-
-  /**
-   * Extract main text content from HTML, removing boilerplate
-   */
-  function extractMainContent(html) {
-    try {
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      
-      // Remove unwanted elements
-      const unwantedSelectors = [
-        'script', 'style', 'noscript', 'iframe', 'svg', 'canvas',
-        'nav', 'header', 'footer', 'aside', 'form',
-        '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
-        '.nav', '.navbar', '.header', '.footer', '.sidebar', '.menu',
-        '.advertisement', '.ad', '.ads', '.social', '.share', '.comments',
-        '.related', '.recommended', '.cookie', '.popup', '.modal'
-      ];
-      
-      for (const selector of unwantedSelectors) {
-        try {
-          doc.querySelectorAll(selector).forEach(el => el.remove());
-        } catch (e) {
-          // Selector might be invalid, skip
-        }
-      }
-      
-      // Try to find main content container
-      const mainSelectors = [
-        'article', 'main', '[role="main"]', '.article', '.content', 
-        '.post', '.entry', '.story', '#content', '#main', '.main-content'
-      ];
-      
-      let mainElement = null;
-      for (const selector of mainSelectors) {
-        mainElement = doc.querySelector(selector);
-        if (mainElement && mainElement.textContent.trim().length > 200) {
-          break;
-        }
-        mainElement = null;
-      }
-      
-      // Fall back to body if no main content found
-      const targetElement = mainElement || doc.body;
-      if (!targetElement) return null;
-      
-      // Extract text with some structure preservation
-      const textContent = extractTextWithStructure(targetElement);
-      
-      // Clean up the text
-      return cleanExtractedText(textContent);
-      
-    } catch (error) {
-      console.warn('[URLBar LLM] Error extracting content:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Extract text while preserving some structure (paragraphs, headings)
-   */
-  function extractTextWithStructure(element) {
-    const blocks = [];
-    
-    // Walk through important text elements
-    const textElements = element.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote, figcaption');
-    
-    for (const el of textElements) {
-      const text = el.textContent.trim();
-      if (text.length > 10) { // Skip very short fragments
-        // Add heading markers
-        if (el.tagName.match(/^H[1-6]$/)) {
-          blocks.push(`\n## ${text}\n`);
-        } else {
-          blocks.push(text);
-        }
-      }
-    }
-    
-    // If we didn't get enough content from structured elements, fall back to innerText
-    if (blocks.join(' ').length < 500) {
-      return element.innerText || element.textContent || '';
-    }
-    
-    return blocks.join('\n\n');
-  }
-
-  /**
-   * Clean up extracted text
-   */
-  function cleanExtractedText(text) {
-    if (!text) return '';
-    
-    return text
-      // Normalize whitespace
-      .replace(/[\t ]+/g, ' ')
-      // Remove excessive newlines
-      .replace(/\n{3,}/g, '\n\n')
-      // Remove lines that are just whitespace
-      .replace(/^\s+$/gm, '')
-      // Trim
-      .trim();
-  }
-
-  /**
-   * Fetch content from multiple search results in parallel
-   */
-  async function fetchSearchResultsContent(searchResults, maxResults = 3) {
-    console.log('[URLBar LLM] Fetching content from', Math.min(searchResults.length, maxResults), 'pages...');
-    
-    const fetchPromises = searchResults.slice(0, maxResults).map(async (result) => {
-      const content = await fetchPageContent(result.url, 3000);
-      return {
-        ...result,
-        content: content || result.snippet // Fall back to snippet if fetch fails
-      };
-    });
-    
-    // Wait for all fetches with a timeout
-    const timeoutPromise = new Promise(resolve => 
-      setTimeout(() => resolve('timeout'), 8000)
-    );
-    
-    try {
-      const raceResult = await Promise.race([
-        Promise.all(fetchPromises),
-        timeoutPromise
-      ]);
-      
-      if (raceResult === 'timeout') {
-        console.warn('[URLBar LLM] Content fetch timed out, using snippets');
-        return searchResults.map(r => ({ ...r, content: r.snippet }));
-      }
-      
-      return raceResult;
-    } catch (error) {
-      console.warn('[URLBar LLM] Error fetching content:', error);
-      return searchResults.map(r => ({ ...r, content: r.snippet }));
-    }
-  }
 
   /**
    * Format search results for LLM context
-   * Now includes actual page content for better answers
+   * Based on n4ze3m-page-assist format with XML-style tags
    */
   function formatSearchResultsForLLM(searchResults, originalQuery) {
     if (!searchResults || searchResults.length === 0) {
@@ -1023,37 +626,28 @@ Answer:`;
 
     const currentDateTime = new Date().toLocaleString();
     
-    // Build search results in XML format with content
+    // Build search results in XML format for better AI parsing
     const searchResultsXml = searchResults.map((result, index) => {
-      const contentSection = result.content && result.content !== result.snippet
-        ? `\nContent:\n${result.content}`
-        : `\nSnippet: ${result.snippet}`;
-      
-      return `<source index="${index + 1}" url="${result.url}" site="${result.source}">
-Title: ${result.title}${contentSection}
-</source>`;
+      return `<search-result data-url="${result.url}" data-index="${index}" data-source="${result.source}">
+Title: ${result.title}
+Snippet: ${result.snippet}
+</search-result>`;
     }).join('\n\n');
 
-    // Enhanced prompt for better synthesis
-    const context = `You are a helpful AI assistant with access to current web search results. Your task is to provide a comprehensive, accurate answer based on the information from these sources.
+    // Use prompt format inspired by page-assist
+    const context = `You are an AI model who is expert at searching the web and answering user's queries.
 
-Current date and time: ${currentDateTime}
+Generate a response that is informative and relevant to the user's query based on provided search results. The current date and time are ${currentDateTime}.
 
-Instructions:
-- Synthesize information from the sources to directly answer the user's question
-- DO NOT just list the sources or tell the user to visit them
-- Extract and present the key facts, news, and information from the content
-- When stating facts, cite the source naturally (e.g., "According to Reuters..." or "As reported by CNN...")
-- If sources contain conflicting information, acknowledge this
-- If the sources don't contain enough information to fully answer, say what you found and what's missing
+The 'search-results' block provides knowledge from web search results. You can use this information to generate a meaningful response.
 
-<web-sources>
+IMPORTANT: When referencing information from search results, naturally mention the source (e.g., "According to [source]..." or "As reported by [source]..."). You can also include the URL if it adds value.
+
+<search-results>
 ${searchResultsXml}
-</web-sources>
+</search-results>
 
-User's question: ${originalQuery}
-
-Provide a direct, informative answer based on the sources above:`;
+User query: ${originalQuery}`;
     
     return context;
   }
@@ -1121,51 +715,7 @@ Provide a direct, informative answer based on the sources above:`;
     // Focus input
     urlbarInput.focus();
     
-    // Trigger Zen's native search mode animation (scale bounce + glow)
-    triggerZenSearchModeAnimation(urlbar);
-    
     console.log(`[URLBar LLM] Activated with provider: ${providerKey}, existing messages: ${conversationHistory.length}`);
-  }
-
-  /**
-   * Trigger LLM mode activation animation
-   * - Scale/pulse effect on the urlbar (like Zen's native animation)
-   * - Glow effect radiating from the provider pill
-   */
-  function triggerZenSearchModeAnimation(urlbar) {
-    try {
-      // Check if Zen's motion library is available
-      const zenUI = window.gZenUIManager;
-      
-      // 1. Scale/pulse animation on the urlbar
-      if (zenUI && zenUI.motion && urlbar.hasAttribute("breakout-extend")) {
-        zenUI.motion.animate(
-          urlbar, 
-          { scale: [1, 0.98, 1] }, 
-          { duration: 0.25 }
-        );
-        console.log('[URLBar LLM] Urlbar pulse animation triggered');
-      }
-      
-      // 2. Glow effect on the pill
-      const labelBox = document.getElementById("urlbar-label-box");
-      if (labelBox) {
-        // Trigger glow animation via CSS attribute
-        labelBox.setAttribute("animate-glow", "true");
-        
-        // Remove the attribute after the animation completes (1 second)
-        setTimeout(() => {
-          requestAnimationFrame(() => {
-            labelBox.removeAttribute("animate-glow");
-          });
-        }, 1000);
-        
-        console.log('[URLBar LLM] Pill glow animation triggered');
-      }
-      
-    } catch (error) {
-      console.warn('[URLBar LLM] Failed to trigger animation:', error);
-    }
   }
 
   function deactivateLLMMode(urlbar, urlbarInput, restoreURL = false) {
@@ -1466,7 +1016,8 @@ Provide a direct, informative answer based on the sources above:`;
     }
 
     // Check API key for non-local providers
-    if (currentProvider.apiKey === "" && currentProvider.name !== "Ollama (Local)") {
+    const providerKeyForAPICheck = urlbar.getAttribute("llm-provider");
+    if (currentProvider.apiKey === "" && providerKeyForAPICheck !== "ollama") {
       // Try to load from preferences first
       const providerKey = urlbar.getAttribute("llm-provider");
       const prefKey = `extension.urlbar-llm.${providerKey}-api-key`;
@@ -1506,35 +1057,20 @@ Provide a direct, informative answer based on the sources above:`;
     abortController = new AbortController();
 
     try {
-      // Perform web search if enabled and query needs it
+      // Perform web search if enabled (only for OpenAI and Mistral)
       let searchContext = null;
       const providerKey = urlbar.getAttribute("llm-provider");
       const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral';
       
-      let needsSearch = false;
       if (isWebSearchEnabled() && supportsWebSearch) {
-        // Let the LLM classify if web search is needed
-        titleElement.textContent = "Analyzing query...";
-        needsSearch = await queryNeedsWebSearch(query, currentProvider);
-      }
-      
-      if (needsSearch) {
-        // Show searching status
+        // Show spinner while searching
         titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
         
-        console.log('[URLBar LLM] Web search triggered for query:', query);
+        console.log('[URLBar LLM] Web search enabled, searching...');
         const searchResults = await searchDuckDuckGo(query);
-        
-        if (searchResults && searchResults.length > 0) {
-          // Update status - fetching content
-          titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
-          
-          // Fetch actual page content from search results
-          console.log('[URLBar LLM] Fetching page content from search results...');
-          const resultsWithContent = await fetchSearchResultsContent(searchResults, 3);
-          
-          searchContext = formatSearchResultsForLLM(resultsWithContent, query);
-          console.log('[URLBar LLM] Web search completed with page content');
+        if (searchResults) {
+          searchContext = formatSearchResultsForLLM(searchResults, query);
+          console.log('[URLBar LLM] Web search completed, context added');
         } else {
           console.log('[URLBar LLM] Web search returned no results');
         }
@@ -1563,11 +1099,11 @@ Provide a direct, informative answer based on the sources above:`;
       
       let accumulatedText = "";
       
-      if (currentProvider.name === "Ollama (Local)") {
+      if (providerKey === "ollama") {
         // Ollama uses different API format
         await streamOllamaResponse(messagesToSend, titleElement, abortController.signal);
       } else {
-        // Standard OpenAI-compatible API (works for OpenAI, Mistral, Gemini)
+        // Standard OpenAI-compatible API (works for OpenAI, Mistral)
         await streamOpenAIResponse(messagesToSend, titleElement, abortController.signal);
       }
       
