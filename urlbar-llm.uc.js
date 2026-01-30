@@ -224,7 +224,7 @@ Answer:`;
     // Load Ollama base URL
     CONFIG.providers.ollama.baseUrl = getPref(
       "extension.urlbar-llm.ollama-base-url",
-      "http://localhost:11434/api"
+      "http://localhost:11434/api/generate"
     );
   }
 
