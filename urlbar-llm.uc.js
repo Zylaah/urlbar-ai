@@ -34,7 +34,7 @@
       ollama: {
         name: "Ollama",
         apiKey: null, // Not needed for local
-        baseUrl: "http://localhost:11434/api/generate",
+        baseUrl: "http://localhost:11434/api/chat",
         model: "mistral"
       }
       // Gemini temporarily disabled
@@ -224,7 +224,7 @@ Answer:`;
     // Load Ollama base URL
     CONFIG.providers.ollama.baseUrl = getPref(
       "extension.urlbar-llm.ollama-base-url",
-      "http://localhost:11434/api/generate"
+      "http://localhost:11434/api/chat"
     );
   }
 
@@ -1563,8 +1563,8 @@ Provide a direct, informative answer based on the sources above:`;
       
       let accumulatedText = "";
       
-      if (currentProvider.name === "Ollama (Local)") {
-        // Ollama uses different API format
+      if (currentProvider.name === "Ollama") {
+        // Ollama uses native /api/chat endpoint
         await streamOllamaResponse(messagesToSend, titleElement, abortController.signal);
       } else {
         // Standard OpenAI-compatible API (works for OpenAI, Mistral, Gemini)
@@ -1663,19 +1663,10 @@ Provide a direct, informative answer based on the sources above:`;
   }
 
   async function streamOllamaResponse(messages, titleElement, signal) {
-    // Convert messages to Ollama format (it uses a simple prompt)
-    // Build context from conversation history
-    let prompt = "";
-    for (const msg of messages) {
-      if (msg.role === "user") {
-        prompt += `User: ${msg.content}\n\n`;
-      } else if (msg.role === "assistant") {
-        prompt += `Assistant: ${msg.content}\n\n`;
-      }
-    }
-    prompt += "Assistant: "; // Prompt for next response
-    
-    console.log(`[URLBar LLM] Ollama prompt length: ${prompt.length} chars`);
+    // Use native Ollama /api/chat endpoint with messages format
+    console.log(`[URLBar LLM] Ollama request URL: ${currentProvider.baseUrl}`);
+    console.log(`[URLBar LLM] Ollama model: ${currentProvider.model}`);
+    console.log(`[URLBar LLM] Ollama messages: ${messages.length}`);
     
     const response = await fetch(currentProvider.baseUrl, {
       method: "POST",
@@ -1684,13 +1675,15 @@ Provide a direct, informative answer based on the sources above:`;
       },
       body: JSON.stringify({
         model: currentProvider.model,
-        prompt: prompt,
+        messages: messages,
         stream: true
       }),
       signal
     });
 
     if (!response.ok) {
+      const errorText = await response.text().catch(() => '');
+      console.error(`[URLBar LLM] Ollama API error response:`, errorText);
       throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
     }
 
@@ -1711,7 +1704,8 @@ Provide a direct, informative answer based on the sources above:`;
         if (line.trim()) {
           try {
             const json = JSON.parse(line);
-            const delta = json.response;
+            // Native /api/chat returns message.content
+            const delta = json.message?.content;
             if (delta) {
               accumulatedText += delta;
               currentAssistantMessage = accumulatedText; // Track for conversation history
