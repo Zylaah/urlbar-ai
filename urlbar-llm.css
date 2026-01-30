@@ -435,3 +435,61 @@
 .llm-message-content li {
   margin: 2px 0;
 }
+
+/* Markdown tables */
+.llm-markdown-table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+  width: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  display: block;
+}
+
+.llm-markdown-table thead {
+  background-color: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
+}
+
+.llm-markdown-table th,
+.llm-markdown-table td {
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.15));
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.llm-markdown-table th {
+  font-weight: 600;
+  color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.95));
+}
+
+.llm-markdown-table td {
+  color: light-dark(rgba(0, 0, 0, 0.8), rgba(255, 255, 255, 0.85));
+}
+
+.llm-markdown-table tbody tr:nth-child(even) {
+  background-color: light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.03));
+}
+
+.llm-markdown-table tbody tr:hover {
+  background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06));
+}
+
+/* Also add table styles for the old urlbarView-row-llm context */
+.urlbarView-row-llm .urlbarView-title table {
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 13px;
+}
+
+.urlbarView-row-llm .urlbarView-title th,
+.urlbarView-row-llm .urlbarView-title td {
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.15));
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.urlbarView-row-llm .urlbarView-title th {
+  background-color: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
+  font-weight: 600;
+}

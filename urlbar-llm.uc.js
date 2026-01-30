@@ -459,20 +459,52 @@ Answer:`;
     // Clear existing content
     element.textContent = "";
     
-    // Split by code blocks first to handle them separately
+    // Split by code blocks and tables first to handle them separately
     const parts = [];
     let lastIndex = 0;
-    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-    let match;
     
+    // Combined regex for code blocks and tables
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+    const tableRegex = /(?:^|\n)((?:\|[^\n]+\|\r?\n)+)/g;
+    
+    // First pass: extract code blocks
+    let codeMatches = [];
+    let match;
     while ((match = codeBlockRegex.exec(text)) !== null) {
-      // Add text before code block
-      if (match.index > lastIndex) {
-        parts.push({ type: 'text', content: text.slice(lastIndex, match.index) });
+      codeMatches.push({ index: match.index, end: match.index + match[0].length, type: 'code', lang: match[1], content: match[2] });
+    }
+    
+    // Second pass: extract tables (only if not inside code blocks)
+    let tableMatches = [];
+    while ((match = tableRegex.exec(text)) !== null) {
+      const tableStart = match.index + (match[0].startsWith('\n') ? 1 : 0);
+      const tableEnd = match.index + match[0].length;
+      
+      // Check if this table is inside a code block
+      const insideCodeBlock = codeMatches.some(cb => tableStart >= cb.index && tableEnd <= cb.end);
+      if (!insideCodeBlock) {
+        const tableContent = match[1].trim();
+        // Validate it's actually a table (has at least 2 rows and separator row)
+        const rows = tableContent.split('\n').filter(r => r.trim());
+        if (rows.length >= 2) {
+          const hasValidSeparator = rows.some(row => /^\|[\s\-:|]+\|$/.test(row.trim()));
+          if (hasValidSeparator) {
+            tableMatches.push({ index: tableStart, end: tableEnd, type: 'table', content: tableContent });
+          }
+        }
       }
-      // Add code block
-      parts.push({ type: 'code', lang: match[1], content: match[2] });
-      lastIndex = match.index + match[0].length;
+    }
+    
+    // Combine and sort all matches
+    const allMatches = [...codeMatches, ...tableMatches].sort((a, b) => a.index - b.index);
+    
+    // Build parts array
+    for (const m of allMatches) {
+      if (m.index > lastIndex) {
+        parts.push({ type: 'text', content: text.slice(lastIndex, m.index) });
+      }
+      parts.push(m);
+      lastIndex = m.end;
     }
     // Add remaining text
     if (lastIndex < text.length) {
@@ -490,6 +522,11 @@ Answer:`;
         code.textContent = part.content.trim();
         pre.appendChild(code);
         element.appendChild(pre);
+      } else if (part.type === 'table') {
+        const table = parseMarkdownTable(part.content);
+        if (table) {
+          element.appendChild(table);
+        }
       } else {
         // Parse inline markdown in text
         const span = document.createElement('span');
@@ -499,6 +536,90 @@ Answer:`;
     }
     
     // Don't attach individual link handlers - we'll use event delegation on the message element instead
+  }
+  
+  // Parse markdown table and return a DOM table element
+  function parseMarkdownTable(tableText) {
+    try {
+      const rows = tableText.split('\n').filter(r => r.trim());
+      if (rows.length < 2) return null;
+      
+      // Find the separator row (contains only |, -, :, and spaces)
+      let separatorIndex = -1;
+      let alignments = [];
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i].trim();
+        if (/^\|[\s\-:|]+\|$/.test(row)) {
+          separatorIndex = i;
+          // Parse alignments from separator
+          const cells = row.split('|').filter(c => c.trim() !== '');
+          alignments = cells.map(cell => {
+            const trimmed = cell.trim();
+            if (trimmed.startsWith(':') && trimmed.endsWith(':')) return 'center';
+            if (trimmed.endsWith(':')) return 'right';
+            return 'left';
+          });
+          break;
+        }
+      }
+      
+      if (separatorIndex === -1) return null;
+      
+      const table = document.createElement('table');
+      table.className = 'llm-markdown-table';
+      
+      // Header rows (before separator)
+      if (separatorIndex > 0) {
+        const thead = document.createElement('thead');
+        for (let i = 0; i < separatorIndex; i++) {
+          const tr = document.createElement('tr');
+          const cells = parseTableRow(rows[i]);
+          cells.forEach((cell, idx) => {
+            const th = document.createElement('th');
+            th.innerHTML = parseInlineMarkdown(cell);
+            if (alignments[idx]) {
+              th.style.textAlign = alignments[idx];
+            }
+            tr.appendChild(th);
+          });
+          thead.appendChild(tr);
+        }
+        table.appendChild(thead);
+      }
+      
+      // Body rows (after separator)
+      if (separatorIndex < rows.length - 1) {
+        const tbody = document.createElement('tbody');
+        for (let i = separatorIndex + 1; i < rows.length; i++) {
+          const tr = document.createElement('tr');
+          const cells = parseTableRow(rows[i]);
+          cells.forEach((cell, idx) => {
+            const td = document.createElement('td');
+            td.innerHTML = parseInlineMarkdown(cell);
+            if (alignments[idx]) {
+              td.style.textAlign = alignments[idx];
+            }
+            tr.appendChild(td);
+          });
+          tbody.appendChild(tr);
+        }
+        table.appendChild(tbody);
+      }
+      
+      return table;
+    } catch (e) {
+      console.warn('[URLBar LLM] Failed to parse table:', e);
+      return null;
+    }
+  }
+  
+  // Parse a single table row into cells
+  function parseTableRow(row) {
+    // Remove leading/trailing pipes and split
+    const trimmed = row.trim();
+    const withoutPipes = trimmed.startsWith('|') ? trimmed.slice(1) : trimmed;
+    const withoutEndPipe = withoutPipes.endsWith('|') ? withoutPipes.slice(0, -1) : withoutPipes;
+    return withoutEndPipe.split('|').map(cell => cell.trim());
   }
   
   function parseInlineMarkdown(text) {
