@@ -59,6 +59,7 @@
   let conversationHistory = []; // Store conversation messages for follow-ups
   let conversationContainer = null; // Container for all messages
   let currentAssistantMessage = ""; // Track current streaming response
+  let currentSearchSources = []; // Track sources used for current response
 
   // Get preferences - Direct access to preference service using Components
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
@@ -120,86 +121,63 @@
   }
 
   /**
-   * Use LLM to intelligently classify if a query needs web search
-   * Much smarter than regex patterns - the LLM understands context
+   * Fast heuristic to determine if a query needs web search
+   * Uses pattern matching instead of LLM classification for speed
    */
-  async function queryNeedsWebSearch(query, provider) {
-    // Quick bypass for obvious cases (saves an API call)
+  function queryNeedsWebSearchFast(query) {
     const lowerQuery = query.toLowerCase().trim();
     
-    // Obviously needs search - skip classification
-    if (/\b(latest|current|today'?s?|news|weather|stock price|election results)\b/.test(lowerQuery)) {
-      console.log('[URLBar LLM] Quick match: needs search');
+    // Obviously needs search - current events, real-time data
+    const needsSearchPatterns = [
+      /\b(latest|current|today'?s?|recent|now|this week|this month|this year)\b/,
+      /\b(news|weather|stock|price|score|result|update|announcement)\b/,
+      /\b(who (is|are|was)|what (is|are|was) the|when (is|was|did))\b/,
+      /\b(happening|happened|released|launched|announced)\b/,
+      /\b(best|top|popular|trending|new)\s+(movies?|shows?|games?|albums?|songs?|books?|products?)\b/,
+      /\b(how much|how many|what time|where is|where are)\b/,
+      /\b(2024|2025|2026)\b/, // Current/recent years
+      /\b(election|president|government|policy|law)\b/,
+      /\b(company|stock|market|economy|business)\b/,
+      /\?$/ // Questions often benefit from search
+    ];
+    
+    // Obviously doesn't need search - creative/coding tasks
+    const noSearchPatterns = [
+      /^(hi|hello|hey|thanks|thank you|bye|goodbye)\b/,
+      /^(write|create|generate|compose|make|build|design|draft)\s+(me\s+)?/,
+      /^(explain|describe|define|what is the definition)\s+(what|how|the concept)/,
+      /\b(code|function|program|script|algorithm|bug|error|syntax)\b/,
+      /\b(translate|convert|format|summarize|rewrite|rephrase)\b/,
+      /\b(math|equation|calculate|formula|solve)\b/,
+      /\b(help me (understand|learn|write|code))\b/,
+      /^(can you|could you|please|i need you to)\s+(help|write|create|explain)/
+    ];
+    
+    // Check no-search patterns first (these are clear signals)
+    for (const pattern of noSearchPatterns) {
+      if (pattern.test(lowerQuery)) {
+        console.log('[URLBar LLM] Fast match: no search needed -', pattern);
+        return false;
+      }
+    }
+    
+    // Then check needs-search patterns
+    for (const pattern of needsSearchPatterns) {
+      if (pattern.test(lowerQuery)) {
+        console.log('[URLBar LLM] Fast match: needs search -', pattern);
+        return true;
+      }
+    }
+    
+    // Default: short factual questions likely need search, longer creative prompts don't
+    const wordCount = query.split(/\s+/).length;
+    if (wordCount <= 8 && /\?$/.test(query)) {
+      console.log('[URLBar LLM] Fast match: short question, trying search');
       return true;
     }
     
-    // Obviously doesn't need search - skip classification  
-    if (/^(hi|hello|hey|thanks|write me|create|generate|explain what|how does .* work)\b/.test(lowerQuery)) {
-      console.log('[URLBar LLM] Quick match: no search needed');
-      return false;
-    }
-    
-    // Use LLM to classify
-    try {
-      console.log('[URLBar LLM] Asking LLM to classify query...');
-      
-      const classificationPrompt = `Determine if this user query requires searching the internet for current/real-time information.
-
-Answer ONLY "SEARCH" or "NO_SEARCH" - nothing else.
-
-SEARCH if the query:
-- Asks about current events, news, or recent happenings
-- Needs real-time data (weather, prices, scores, stocks)
-- Asks about something that changes frequently
-- References specific dates, "today", "latest", "current", "recent"
-- Asks factual questions about current state of the world
-
-NO_SEARCH if the query:
-- Is a creative task (write, create, generate, compose)
-- Asks about timeless concepts, science, math, definitions
-- Is coding/programming help
-- Is conversational (greetings, thanks)
-- Asks about historical facts (not current events)
-- Is translation or text transformation
-- Can be answered with general knowledge
-
-Query: "${query}"
-
-Answer:`;
-
-      const response = await fetch(provider.baseUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${provider.apiKey}`
-        },
-        body: JSON.stringify({
-          model: provider.model,
-          messages: [{ role: "user", content: classificationPrompt }],
-          max_tokens: 10,
-          temperature: 0
-        }),
-        signal: AbortSignal.timeout(3000) // 3 second timeout
-      });
-
-      if (!response.ok) {
-        console.warn('[URLBar LLM] Classification request failed, defaulting to no search');
-        return false;
-      }
-
-      const data = await response.json();
-      const answer = data.choices?.[0]?.message?.content?.trim().toUpperCase() || '';
-      
-      const needsSearch = answer.includes('SEARCH') && !answer.includes('NO_SEARCH');
-      console.log('[URLBar LLM] LLM classification:', answer, '-> needsSearch:', needsSearch);
-      
-      return needsSearch;
-      
-    } catch (error) {
-      // On timeout or error, default to no search (faster response)
-      console.warn('[URLBar LLM] Classification failed:', error.message, '- defaulting to no search');
-      return false;
-    }
+    console.log('[URLBar LLM] Fast match: no clear signal, skipping search');
+    return false;
   }
 
   // Load API keys and config from preferences
@@ -655,6 +633,10 @@ Answer:`;
     // Links [text](url)
     html = html.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
     
+    // Citation markers [1], [2], etc. - convert to styled spans with data attribute
+    // Match [1], [2], [3] etc. but not [text](url) links which were already converted
+    html = html.replace(/\[(\d+)\](?!\()/g, '<span class="llm-citation-marker" data-source="$1">$1</span>');
+    
     // Line breaks
     html = html.replace(/\n/g, '<br/>');
     
@@ -673,66 +655,66 @@ Answer:`;
   /**
    * Search DuckDuckGo HTML (scraping search results)
    * Uses CORS proxy to bypass restrictions in userscript context
+   * Optimized for speed with parallel proxy attempts
    */
-  async function searchDuckDuckGo(query, limit = 3) {
+  async function searchDuckDuckGo(query, limit = 5) {
     if (!isWebSearchEnabled()) {
       return null;
     }
 
     try {
       console.log('[URLBar LLM] Searching DuckDuckGo for:', query);
+      const startTime = Date.now();
       
       // Try DuckDuckGo Lite first (simpler HTML, more reliable parsing)
       const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
       
-      // List of CORS proxies to try in order
+      // List of CORS proxies - try fastest first
       const corsProxies = [
         (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
       ];
       
-      let html = null;
-      let lastError = null;
-      
-      for (const proxyFn of corsProxies) {
+      // Race the proxies for faster response
+      const fetchWithTimeout = async (proxyFn, timeout = 4000) => {
+        const proxyUrl = proxyFn(searchUrl);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+        
         try {
-          const proxyUrl = proxyFn(searchUrl);
-          console.log('[URLBar LLM] Trying proxy:', proxyUrl.substring(0, 50) + '...');
-          
           const response = await fetch(proxyUrl, {
             headers: {
               'Accept': 'text/html,application/xhtml+xml',
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/120.0'
-            }
+            },
+            signal: controller.signal
           });
           
+          clearTimeout(timeoutId);
+          
           if (!response.ok) {
-            console.warn('[URLBar LLM] Proxy returned:', response.status);
-            continue;
+            throw new Error(`HTTP ${response.status}`);
           }
           
-          html = await response.text();
+          const html = await response.text();
           
           if (html && html.length > 500 && !html.includes('error') && !html.includes('blocked')) {
-            console.log('[URLBar LLM] Got valid HTML response, length:', html.length);
-            break;
-          } else {
-            console.warn('[URLBar LLM] Invalid/short HTML from proxy, length:', html?.length);
-            html = null;
+            return html;
           }
-        } catch (proxyError) {
-          console.warn('[URLBar LLM] Proxy failed:', proxyError.message);
-          lastError = proxyError;
+          throw new Error('Invalid response');
+        } catch (e) {
+          clearTimeout(timeoutId);
+          throw e;
         }
-      }
+      };
       
-      if (!html) {
+      // Try proxies in parallel, use first successful result
+      let html = null;
+      try {
+        html = await Promise.any(corsProxies.map(proxy => fetchWithTimeout(proxy, 4000)));
+        console.log('[URLBar LLM] Got valid HTML response in', Date.now() - startTime, 'ms');
+      } catch (e) {
         console.error('[URLBar LLM] All proxies failed');
-        // Log first 500 chars of last response for debugging
-        if (html !== null) {
-          console.log('[URLBar LLM] Last response preview:', html.substring(0, 500));
-        }
         return null;
       }
       
@@ -741,12 +723,10 @@ Answer:`;
       
       if (results.length === 0) {
         console.log('[URLBar LLM] No search results found in HTML');
-        // Log HTML snippet for debugging
-        console.log('[URLBar LLM] HTML preview:', html.substring(0, 1000));
         return null;
       }
 
-      console.log('[URLBar LLM] Found', results.length, 'search results');
+      console.log('[URLBar LLM] Found', results.length, 'search results in', Date.now() - startTime, 'ms');
       return results;
 
     } catch (error) {
@@ -945,24 +925,27 @@ Answer:`;
    * Fetch and extract main content from a webpage
    * @param {string} url - The URL to fetch
    * @param {number} maxLength - Maximum content length to return
+   * @param {number} timeout - Timeout in ms (default 3000)
    * @returns {Promise<string|null>} - Extracted text content or null
    */
-  async function fetchPageContent(url, maxLength = 4000) {
+  async function fetchPageContent(url, maxLength = 2000, timeout = 3000) {
     try {
-      console.log('[URLBar LLM] Fetching page content:', url);
-      
-      // Use CORS proxy
+      // Use CORS proxy with timeout
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
       
       const response = await fetch(proxyUrl, {
         headers: {
           'Accept': 'text/html,application/xhtml+xml',
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/120.0'
-        }
+        },
+        signal: controller.signal
       });
       
+      clearTimeout(timeoutId);
+      
       if (!response.ok) {
-        console.warn('[URLBar LLM] Failed to fetch page:', response.status);
         return null;
       }
       
@@ -975,20 +958,15 @@ Answer:`;
       const content = extractMainContent(html);
       
       if (!content || content.length < 50) {
-        console.warn('[URLBar LLM] No meaningful content extracted from:', url);
         return null;
       }
       
       // Truncate if too long
-      const truncated = content.length > maxLength 
-        ? content.substring(0, maxLength) + '...[truncated]'
+      return content.length > maxLength 
+        ? content.substring(0, maxLength) + '...'
         : content;
       
-      console.log('[URLBar LLM] Extracted', truncated.length, 'chars from:', url);
-      return truncated;
-      
     } catch (error) {
-      console.warn('[URLBar LLM] Error fetching page content:', error.message);
       return null;
     }
   }
@@ -1098,44 +1076,58 @@ Answer:`;
 
   /**
    * Fetch content from multiple search results in parallel
+   * Optimized for speed - uses shorter timeouts and settles quickly
    */
   async function fetchSearchResultsContent(searchResults, maxResults = 3) {
+    const startTime = Date.now();
     console.log('[URLBar LLM] Fetching content from', Math.min(searchResults.length, maxResults), 'pages...');
     
-    const fetchPromises = searchResults.slice(0, maxResults).map(async (result) => {
-      const content = await fetchPageContent(result.url, 3000);
+    // Use Promise.allSettled for faster results (don't wait for slow pages)
+    const fetchPromises = searchResults.slice(0, maxResults).map(async (result, index) => {
+      const content = await fetchPageContent(result.url, 2000, 3000);
       return {
         ...result,
-        content: content || result.snippet // Fall back to snippet if fetch fails
+        content: content || result.snippet,
+        index: index + 1 // 1-indexed for citations
       };
     });
     
-    // Wait for all fetches with a timeout
+    // Wait for all fetches with a shorter timeout (4 seconds max)
     const timeoutPromise = new Promise(resolve => 
-      setTimeout(() => resolve('timeout'), 8000)
+      setTimeout(() => resolve('timeout'), 4000)
     );
     
     try {
       const raceResult = await Promise.race([
-        Promise.all(fetchPromises),
+        Promise.allSettled(fetchPromises),
         timeoutPromise
       ]);
       
       if (raceResult === 'timeout') {
-        console.warn('[URLBar LLM] Content fetch timed out, using snippets');
-        return searchResults.map(r => ({ ...r, content: r.snippet }));
+        console.warn('[URLBar LLM] Content fetch timed out after', Date.now() - startTime, 'ms, using snippets');
+        return searchResults.slice(0, maxResults).map((r, i) => ({ ...r, content: r.snippet, index: i + 1 }));
       }
       
-      return raceResult;
+      // Extract successful results, use snippets for failed ones
+      const results = raceResult.map((settled, i) => {
+        if (settled.status === 'fulfilled') {
+          return settled.value;
+        }
+        return { ...searchResults[i], content: searchResults[i].snippet, index: i + 1 };
+      });
+      
+      console.log('[URLBar LLM] Content fetch completed in', Date.now() - startTime, 'ms');
+      return results;
     } catch (error) {
       console.warn('[URLBar LLM] Error fetching content:', error);
-      return searchResults.map(r => ({ ...r, content: r.snippet }));
+      return searchResults.slice(0, maxResults).map((r, i) => ({ ...r, content: r.snippet, index: i + 1 }));
     }
   }
 
   /**
    * Format search results for LLM context
    * Now includes actual page content for better answers
+   * Instructs LLM to cite sources using [1], [2], etc.
    */
   function formatSearchResultsForLLM(searchResults, originalQuery) {
     if (!searchResults || searchResults.length === 0) {
@@ -1145,28 +1137,34 @@ Answer:`;
     const currentDateTime = new Date().toLocaleString();
     
     // Build search results in XML format with content
-    const searchResultsXml = searchResults.map((result, index) => {
+    const searchResultsXml = searchResults.map((result) => {
+      const idx = result.index || searchResults.indexOf(result) + 1;
       const contentSection = result.content && result.content !== result.snippet
         ? `\nContent:\n${result.content}`
         : `\nSnippet: ${result.snippet}`;
       
-      return `<source index="${index + 1}" url="${result.url}" site="${result.source}">
+      return `<source id="[${idx}]" url="${result.url}" site="${result.source}">
 Title: ${result.title}${contentSection}
 </source>`;
     }).join('\n\n');
 
-    // Enhanced prompt for better synthesis
+    // Enhanced prompt for better synthesis with numbered citations
     const context = `You are a helpful AI assistant with access to current web search results. Your task is to provide a comprehensive, accurate answer based on the information from these sources.
 
 Current date and time: ${currentDateTime}
 
-Instructions:
+IMPORTANT CITATION INSTRUCTIONS:
+- When stating facts from sources, cite them using the source number in brackets like [1], [2], etc.
+- Place citations at the end of the sentence or clause that contains the information
+- You can cite multiple sources for the same fact: [1][2]
+- Example: "The company reported record profits in Q4 [1], while analysts predict continued growth [2]."
+- DO NOT write out the full URL or source name - just use the number in brackets
+
+Other instructions:
 - Synthesize information from the sources to directly answer the user's question
-- DO NOT just list the sources or tell the user to visit them
 - Extract and present the key facts, news, and information from the content
-- When stating facts, cite the source naturally (e.g., "According to Reuters..." or "As reported by CNN...")
-- If sources contain conflicting information, acknowledge this
-- If the sources don't contain enough information to fully answer, say what you found and what's missing
+- If sources contain conflicting information, acknowledge this and cite both
+- If the sources don't contain enough information to fully answer, say what you found
 
 <web-sources>
 ${searchResultsXml}
@@ -1174,9 +1172,118 @@ ${searchResultsXml}
 
 User's question: ${originalQuery}
 
-Provide a direct, informative answer based on the sources above:`;
+Provide a direct, informative answer with citations:`;
     
     return context;
+  }
+
+  /**
+   * Display source pills at the bottom of a message
+   * Creates clickable pills showing the sources used
+   */
+  function displaySourcePills(messageElement, sources) {
+    if (!messageElement || !sources || sources.length === 0) {
+      return;
+    }
+    
+    // Check if pills already exist
+    let existingPills = messageElement.querySelector('.llm-source-pills');
+    if (existingPills) {
+      existingPills.remove();
+    }
+    
+    // Create pills container
+    const pillsContainer = document.createElement('div');
+    pillsContainer.className = 'llm-source-pills';
+    
+    // Add label
+    const label = document.createElement('span');
+    label.className = 'llm-source-pills-label';
+    label.textContent = 'Sources';
+    pillsContainer.appendChild(label);
+    
+    // Create a pill for each source
+    sources.forEach((source, i) => {
+      const pill = document.createElement('a');
+      pill.className = 'llm-source-pill';
+      pill.href = source.url;
+      pill.target = '_blank';
+      pill.rel = 'noopener';
+      pill.title = source.title;
+      
+      // Add index number
+      const indexSpan = document.createElement('span');
+      indexSpan.className = 'llm-source-pill-index';
+      indexSpan.textContent = source.index || (i + 1);
+      pill.appendChild(indexSpan);
+      
+      // Add favicon
+      const favicon = document.createElement('img');
+      favicon.className = 'llm-source-pill-favicon';
+      favicon.src = `https://www.google.com/s2/favicons?domain=${source.source}&sz=16`;
+      favicon.alt = '';
+      favicon.onerror = () => { favicon.style.display = 'none'; };
+      pill.appendChild(favicon);
+      
+      // Add source name
+      const sourceName = document.createElement('span');
+      sourceName.className = 'llm-source-pill-name';
+      sourceName.textContent = source.source;
+      pill.appendChild(sourceName);
+      
+      // Handle click - open in background tab
+      pill.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isClickingLink = true;
+      });
+      
+      pill.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        try {
+          const topWindow = window.top || window;
+          const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
+          
+          if (browser && browser.addTab) {
+            browser.addTab(source.url, {
+              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+              inBackground: true
+            });
+            console.log('[URLBar LLM] Opened source in background:', source.url);
+          } else if (topWindow.open) {
+            topWindow.open(source.url, '_blank');
+          }
+          
+          // Keep urlbar open
+          setTimeout(() => {
+            const urlbarInput = document.getElementById("urlbar-input");
+            const urlbar = document.getElementById("urlbar");
+            if (urlbarInput && urlbar) {
+              urlbar.setAttribute("open", "true");
+              urlbarInput.focus();
+            }
+            isClickingLink = false;
+          }, 100);
+        } catch (err) {
+          console.error('[URLBar LLM] Failed to open source:', err);
+          isClickingLink = false;
+        }
+      });
+      
+      pillsContainer.appendChild(pill);
+    });
+    
+    messageElement.appendChild(pillsContainer);
+    
+    // Scroll to show pills
+    setTimeout(() => {
+      const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+      if (urlbarViewBodyInner) {
+        urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
+      }
+    }, 50);
   }
 
   function activateLLMMode(urlbar, urlbarInput, providerKey) {
@@ -1525,6 +1632,58 @@ Provide a direct, informative answer based on the sources above:`;
       const target = e.target;
       const link = target.tagName === 'A' ? target : target.closest('a');
       
+      // Handle citation marker clicks
+      const citationMarker = target.classList?.contains('llm-citation-marker') ? target : target.closest('.llm-citation-marker');
+      if (citationMarker && eventType === 'click') {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        const sourceIndex = parseInt(citationMarker.dataset.source, 10);
+        if (sourceIndex && currentSearchSources && currentSearchSources[sourceIndex - 1]) {
+          const source = currentSearchSources[sourceIndex - 1];
+          
+          // Open the source URL in background tab
+          try {
+            isClickingLink = true;
+            const topWindow = window.top || window;
+            const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
+            
+            if (browser && browser.addTab) {
+              browser.addTab(source.url, {
+                triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+                inBackground: true
+              });
+              console.log('[URLBar LLM] Opened source', sourceIndex, 'in background:', source.url);
+            }
+            
+            // Highlight the corresponding pill briefly
+            const pillsContainer = messageDiv.querySelector('.llm-source-pills');
+            if (pillsContainer) {
+              const pills = pillsContainer.querySelectorAll('.llm-source-pill');
+              const pill = pills[sourceIndex - 1];
+              if (pill) {
+                pill.classList.add('llm-source-pill-highlight');
+                setTimeout(() => pill.classList.remove('llm-source-pill-highlight'), 1000);
+              }
+            }
+            
+            setTimeout(() => {
+              const urlbarInput = document.getElementById("urlbar-input");
+              const urlbar = document.getElementById("urlbar");
+              if (urlbarInput && urlbar) {
+                urlbar.setAttribute("open", "true");
+                urlbarInput.focus();
+              }
+              isClickingLink = false;
+            }, 100);
+          } catch (err) {
+            console.error('[URLBar LLM] Failed to open citation source:', err);
+            isClickingLink = false;
+          }
+        }
+        return;
+      }
+      
       if (link && link.href) {
         console.log(`[URLBar LLM] Link ${eventType}:`, link.href);
         e.preventDefault();
@@ -1619,6 +1778,9 @@ Provide a direct, informative answer based on the sources above:`;
 
     // Set thinking state
     urlbar.setAttribute("is-llm-thinking", "true");
+    
+    // Clear previous search sources
+    currentSearchSources = [];
 
     // Abort any previous request
     if (abortController) {
@@ -1629,38 +1791,45 @@ Provide a direct, informative answer based on the sources above:`;
     try {
       // Perform web search if enabled and query needs it
       let searchContext = null;
+      let searchResultsForDisplay = null;
       const providerKey = urlbar.getAttribute("llm-provider");
       const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral';
       
+      // Use fast heuristic instead of LLM classification for speed
       let needsSearch = false;
       if (isWebSearchEnabled() && supportsWebSearch) {
-        // Let the LLM classify if web search is needed
-        titleElement.textContent = "Analyzing query...";
-        needsSearch = await queryNeedsWebSearch(query, currentProvider);
+        needsSearch = queryNeedsWebSearchFast(query);
       }
       
       if (needsSearch) {
-        // Show searching status
-        titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
+        // Show searching status with spinner
+        titleElement.innerHTML = '<span class="llm-search-spinner"></span> Searching...';
         
         console.log('[URLBar LLM] Web search triggered for query:', query);
+        const startTime = Date.now();
         const searchResults = await searchDuckDuckGo(query);
         
         if (searchResults && searchResults.length > 0) {
           // Update status - fetching content
-          titleElement.innerHTML = '<span class="llm-search-spinner"></span>';
+          titleElement.innerHTML = '<span class="llm-search-spinner"></span> Reading sources...';
           
-          // Fetch actual page content from search results
-          console.log('[URLBar LLM] Fetching page content from search results...');
+          // Fetch actual page content from search results (faster now)
           const resultsWithContent = await fetchSearchResultsContent(searchResults, 3);
           
+          // Store for source pills display
+          searchResultsForDisplay = resultsWithContent;
+          currentSearchSources = resultsWithContent;
+          
           searchContext = formatSearchResultsForLLM(resultsWithContent, query);
-          console.log('[URLBar LLM] Web search completed with page content');
+          console.log('[URLBar LLM] Web search completed in', Date.now() - startTime, 'ms total');
         } else {
           console.log('[URLBar LLM] Web search returned no results');
         }
       } else if (!supportsWebSearch && isWebSearchEnabled()) {
         console.log('[URLBar LLM] Web search not supported for provider:', providerKey);
+      } else {
+        // Clear sources if no search was performed
+        currentSearchSources = [];
       }
 
       // Clear spinner and show thinking text
@@ -1699,6 +1868,11 @@ Provide a direct, informative answer based on the sources above:`;
       });
       
       console.log("[URLBar LLM] Conversation now has", conversationHistory.length, "messages");
+      
+      // Display source pills if we have search sources
+      if (currentSearchSources && currentSearchSources.length > 0) {
+        displaySourcePills(streamingResultRow, currentSearchSources);
+      }
 
       urlbar.removeAttribute("is-llm-thinking");
     } catch (error) {

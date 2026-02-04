@@ -275,22 +275,42 @@
 /* Web search spinner - rotating diamond */
 .llm-search-spinner {
   display: inline-block;
-  width: 8px;
-  height: 8px;
-  background: light-dark(rgba(0, 0, 0, 0.3), rgba(255, 255, 255, 0.3));
+  width: 10px;
+  height: 10px;
+  background: var(--zen-primary-color, #5b8def);
   transform: rotate(45deg);
-  animation: llm-spinner-rotate 1s linear infinite;
+  animation: llm-spinner-rotate 0.8s ease-in-out infinite;
   vertical-align: middle;
-  margin-bottom: 5px;
+  margin-right: 8px;
+  opacity: 0.8;
 }
 
 @keyframes llm-spinner-rotate {
   0% {
-    transform: rotate(45deg);
+    transform: rotate(45deg) scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    transform: rotate(225deg) scale(0.8);
+    opacity: 1;
   }
   100% {
-    transform: rotate(405deg);
+    transform: rotate(405deg) scale(1);
+    opacity: 0.8;
   }
+}
+
+/* Provider-specific spinner colors */
+#urlbar[llm-provider="mistral"] .llm-search-spinner {
+  background: rgb(250, 80, 15);
+}
+
+#urlbar[llm-provider="openai"] .llm-search-spinner {
+  background: #10a37f;
+}
+
+#urlbar[llm-provider="ollama"] .llm-search-spinner {
+  background: #888;
 }
 
 /* Provider-specific styling (optional) */
@@ -492,4 +512,156 @@
 .urlbarView-row-llm .urlbarView-title th {
   background-color: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
   font-weight: 600;
+}
+
+/* ============================================
+   Source Pills - Modern citation UI
+   ============================================ */
+
+.llm-source-pills {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
+}
+
+.llm-source-pills-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: light-dark(rgba(0, 0, 0, 0.5), rgba(255, 255, 255, 0.5));
+  margin-right: 4px;
+}
+
+.llm-source-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px 6px 8px;
+  background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08));
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12));
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  color: light-dark(rgba(0, 0, 0, 0.8), rgba(255, 255, 255, 0.9));
+  text-decoration: none !important;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  transition: all 0.15s ease;
+  max-width: 200px;
+}
+
+.llm-source-pill:hover {
+  background: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.15));
+  border-color: light-dark(rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.25));
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px light-dark(rgba(0, 0, 0, 0.1), rgba(0, 0, 0, 0.3));
+}
+
+.llm-source-pill:active {
+  transform: translateY(0);
+}
+
+.llm-source-pill-index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  background: var(--zen-primary-color, #5b8def);
+  color: white;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.llm-source-pill-favicon {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.llm-source-pill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Provider-specific pill index colors */
+#urlbar[llm-provider="mistral"] .llm-source-pill-index {
+  background: linear-gradient(135deg, rgb(250, 80, 15) 0%, rgb(255, 113, 15) 100%);
+}
+
+#urlbar[llm-provider="openai"] .llm-source-pill-index {
+  background: linear-gradient(135deg, #10a37f 0%, #1a7f64 100%);
+}
+
+#urlbar[llm-provider="ollama"] .llm-source-pill-index {
+  background: linear-gradient(135deg, #666 0%, #888 100%);
+}
+
+/* Inline citation markers styling */
+.llm-message-content {
+  /* Make citation numbers stand out slightly */
+}
+
+/* Style inline citation markers [1], [2] in the text */
+.llm-citation-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  margin: 0 1px;
+  background: var(--zen-primary-color, #5b8def);
+  color: white;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: 700;
+  vertical-align: super;
+  cursor: pointer;
+  text-decoration: none !important;
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+  pointer-events: auto !important;
+}
+
+.llm-citation-marker:hover {
+  transform: scale(1.1);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* Provider-specific citation marker colors */
+#urlbar[llm-provider="mistral"] .llm-citation-marker {
+  background: linear-gradient(135deg, rgb(250, 80, 15) 0%, rgb(255, 113, 15) 100%);
+}
+
+#urlbar[llm-provider="openai"] .llm-citation-marker {
+  background: linear-gradient(135deg, #10a37f 0%, #1a7f64 100%);
+}
+
+#urlbar[llm-provider="ollama"] .llm-citation-marker {
+  background: linear-gradient(135deg, #666 0%, #888 100%);
+}
+
+/* Highlight animation for source pill when citation is clicked */
+.llm-source-pill-highlight {
+  animation: llm-pill-highlight 1s ease-out;
+}
+
+@keyframes llm-pill-highlight {
+  0% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 3px var(--zen-primary-color, #5b8def);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: none;
+  }
 }

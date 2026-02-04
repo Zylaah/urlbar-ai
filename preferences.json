@@ -159,6 +159,21 @@
     "label": "Behavior"
   },
   {
+    "property": "extension.urlbar-llm.web-search-enabled",
+    "label": "Enable Web Search",
+    "type": "checkbox",
+    "defaultValue": true,
+    "description": "Automatically search the web for current information when needed. Works with Mistral and OpenAI providers.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
     "property": "extension.urlbar-llm.hide-suggestions",
     "label": "Hide Suggestions in LLM Mode",
     "type": "checkbox",
