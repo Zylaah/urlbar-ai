@@ -143,62 +143,185 @@
   }
 
   /**
-   * Fast heuristic to determine if a query needs web search
-   * Uses pattern matching instead of LLM classification for speed
+   * Robust web search detection
+   * Combines language-agnostic structural patterns with multilingual keywords
+   * Inspired by Hana's lightweightWebSearchEnhancer
    */
-  function queryNeedsWebSearchFast(query) {
-    const lowerQuery = query.toLowerCase().trim();
+  function queryNeedsWebSearchFast(query, conversationContext = '') {
+    const trimmedQuery = query.trim();
+    const lowerQuery = trimmedQuery.toLowerCase();
+    const wordCount = trimmedQuery.split(/\s+/).length;
     
-    // Obviously needs search - current events, real-time data
-    const needsSearchPatterns = [
-      /\b(latest|current|today'?s?|recent|now|this week|this month|this year)\b/,
-      /\b(news|weather|stock|price|score|result|update|announcement)\b/,
-      /\b(who (is|are|was)|what (is|are|was) the|when (is|was|did))\b/,
-      /\b(happening|happened|released|launched|announced)\b/,
-      /\b(best|top|popular|trending|new)\s+(movies?|shows?|games?|albums?|songs?|books?|products?)\b/,
-      /\b(how much|how many|what time|where is|where are)\b/,
-      /\b(2024|2025|2026)\b/, // Current/recent years
-      /\b(election|president|government|policy|law)\b/,
-      /\b(company|stock|market|economy|business)\b/,
-      /\?$/ // Questions often benefit from search
+    // ========================================
+    // 1. CLEAR "NO SEARCH" PATTERNS (check first)
+    // ========================================
+    
+    // Code/programming patterns (universal syntax)
+    const codePatterns = [
+      /[{}\[\]();]/, // Brackets, braces, semicolons
+      /\b(function|const|let|var|class|def|import|return|if|else|for|while)\b/,
+      /\b(console\.|print\(|System\.|std::)/,
+      /\.(js|ts|py|java|cpp|c|go|rs|rb|php|html|css|json|xml|yaml|md)$/i,
+      /^```/, // Code block markers
     ];
     
-    // Obviously doesn't need search - creative/coding tasks
-    const noSearchPatterns = [
-      /^(hi|hello|hey|thanks|thank you|bye|goodbye)\b/,
-      /^(write|create|generate|compose|make|build|design|draft)\s+(me\s+)?/,
-      /^(explain|describe|define|what is the definition)\s+(what|how|the concept)/,
-      /\b(code|function|program|script|algorithm|bug|error|syntax)\b/,
-      /\b(translate|convert|format|summarize|rewrite|rephrase)\b/,
-      /\b(math|equation|calculate|formula|solve)\b/,
-      /\b(help me (understand|learn|write|code))\b/,
-      /^(can you|could you|please|i need you to)\s+(help|write|create|explain)/
-    ];
-    
-    // Check no-search patterns first (these are clear signals)
-    for (const pattern of noSearchPatterns) {
-      if (pattern.test(lowerQuery)) {
-        console.log('[URLBar LLM] Fast match: no search needed -', pattern);
+    for (const pattern of codePatterns) {
+      if (pattern.test(trimmedQuery)) {
+        console.log('[URLBar LLM] No search: code pattern');
         return false;
       }
     }
     
-    // Then check needs-search patterns
-    for (const pattern of needsSearchPatterns) {
-      if (pattern.test(lowerQuery)) {
-        console.log('[URLBar LLM] Fast match: needs search -', pattern);
+    // Mathematical expressions (universal)
+    if (/\d+\s*[\+\-\*\/\^]\s*\d+/.test(trimmedQuery) || /[∫∑∏√π∞]/.test(trimmedQuery)) {
+      console.log('[URLBar LLM] No search: math expression');
+      return false;
+    }
+    
+    // Creative task keywords (multilingual)
+    const creativeKeywords = [
+      // English
+      'write me', 'create a', 'generate', 'compose', 'draft', 'make me',
+      'help me write', 'help me create', 'rewrite', 'rephrase',
+      // French
+      'écris-moi', 'écris moi', 'crée', 'génère', 'compose', 'rédige',
+      'aide-moi à écrire', 'reformule',
+      // German
+      'schreib mir', 'erstelle', 'verfasse',
+      // Spanish
+      'escríbeme', 'crea', 'genera', 'redacta',
+      // Italian
+      'scrivimi', 'crea', 'genera',
+      // Portuguese
+      'escreva', 'crie', 'gere'
+    ];
+    
+    if (creativeKeywords.some(kw => lowerQuery.includes(kw))) {
+      console.log('[URLBar LLM] No search: creative task');
+      return false;
+    }
+    
+    // Very long queries (>40 words) are usually creative/conversational
+    if (wordCount > 40) {
+      console.log('[URLBar LLM] No search: very long query');
+      return false;
+    }
+    
+    // ========================================
+    // 2. CLEAR "NEEDS SEARCH" PATTERNS
+    // ========================================
+    
+    // Recent/current keywords (multilingual)
+    const recentKeywords = [
+      // English
+      'latest', 'recent', 'current', 'today', 'now', 'breaking', 'news', 'update',
+      'this week', 'this month', 'this year', 'last week', 'last month',
+      // French
+      'dernier', 'dernière', 'récent', 'actuel', 'actuelle', "aujourd'hui", 
+      'maintenant', 'actualité', 'mise à jour', 'cette semaine', 'ce mois',
+      // German
+      'aktuell', 'neueste', 'heute', 'jetzt', 'diese woche', 'nachrichten',
+      // Spanish
+      'último', 'última', 'reciente', 'actual', 'hoy', 'ahora', 'noticias',
+      // Italian
+      'ultimo', 'ultima', 'recente', 'attuale', 'oggi', 'adesso', 'notizie',
+      // Portuguese
+      'último', 'última', 'recente', 'atual', 'hoje', 'agora', 'notícias'
+    ];
+    
+    if (recentKeywords.some(kw => lowerQuery.includes(kw))) {
+      console.log('[URLBar LLM] Needs search: recent/current keyword');
+      return true;
+    }
+    
+    // Recent years (dynamic)
+    const currentYear = new Date().getFullYear();
+    for (let y = currentYear - 1; y <= currentYear + 1; y++) {
+      if (trimmedQuery.includes(String(y))) {
+        console.log('[URLBar LLM] Needs search: year', y);
         return true;
       }
     }
     
-    // Default: short factual questions likely need search, longer creative prompts don't
-    const wordCount = query.split(/\s+/).length;
-    if (wordCount <= 8 && /\?$/.test(query)) {
-      console.log('[URLBar LLM] Fast match: short question, trying search');
+    // Factual question keywords (multilingual)
+    const factualKeywords = [
+      // English
+      'who is', 'who are', 'who was', 'what is the', 'what are the',
+      'when is', 'when was', 'when did', 'where is', 'where are',
+      'how much', 'how many', 'what happened', 'what time',
+      // French
+      'qui est', 'qui sont', "c'est quoi", "qu'est-ce que", 'quand est',
+      'où est', 'où sont', 'combien', "qu'est-il arrivé",
+      // German
+      'wer ist', 'was ist', 'wann ist', 'wo ist', 'wie viel',
+      // Spanish
+      'quién es', 'qué es', 'cuándo es', 'dónde está', 'cuánto',
+      // Italian
+      'chi è', 'cosa è', "cos'è", 'quando è', 'dove è', 'quanto'
+    ];
+    
+    if (factualKeywords.some(kw => lowerQuery.includes(kw))) {
+      console.log('[URLBar LLM] Needs search: factual question keyword');
       return true;
     }
     
-    console.log('[URLBar LLM] Fast match: no clear signal, skipping search');
+    // Prices, currencies (universal)
+    if (/[$€£¥₹]\s*\d|\d+\s*[$€£¥₹]|\d+\s*(USD|EUR|GBP|BTC|ETH)\b/i.test(trimmedQuery)) {
+      console.log('[URLBar LLM] Needs search: price/currency pattern');
+      return true;
+    }
+    
+    // URLs or domain patterns
+    if (/\b\w+\.(com|org|net|io|ai|gov|edu|co|fr|de|es|it|uk)\b/i.test(trimmedQuery)) {
+      console.log('[URLBar LLM] Needs search: URL/domain');
+      return true;
+    }
+    
+    // Question mark with short query
+    if (/\?$/.test(trimmedQuery) && wordCount <= 12) {
+      console.log('[URLBar LLM] Needs search: short question');
+      return true;
+    }
+    
+    // Multiple proper nouns (names, places, companies)
+    const words = trimmedQuery.split(/\s+/);
+    let properNounCount = 0;
+    for (let i = 1; i < words.length; i++) {
+      if (/^[A-Z][a-zÀ-ÿ]/.test(words[i]) && !/[.!?]$/.test(words[i-1] || '')) {
+        properNounCount++;
+      }
+    }
+    if (properNounCount >= 2) {
+      console.log('[URLBar LLM] Needs search: multiple proper nouns');
+      return true;
+    }
+    
+    // Short lookup queries (2-5 words, starts with capital, not a command)
+    if (wordCount >= 2 && wordCount <= 5) {
+      const isCommand = /^(write|create|make|help|explain|translate|tell|give|show|list)/i.test(trimmedQuery);
+      const startsCapital = /^[A-Z]/.test(trimmedQuery);
+      
+      if (!isCommand && startsCapital) {
+        console.log('[URLBar LLM] Needs search: short lookup query');
+        return true;
+      }
+    }
+    
+    // Single capitalized term (1-3 words) - likely looking something up
+    if (wordCount <= 3 && /^[A-Z]/.test(trimmedQuery) && !/^(I|A|The|Le|La|Der|Die|Das|El|Il)\s/i.test(trimmedQuery)) {
+      console.log('[URLBar LLM] Needs search: capitalized lookup');
+      return true;
+    }
+    
+    // ========================================
+    // 3. DEFAULT: Search for short queries, skip for long ones
+    // ========================================
+    if (wordCount <= 8) {
+      console.log('[URLBar LLM] Default: short query, trying search');
+      return true;
+    }
+    
+    console.log('[URLBar LLM] Default: longer query, skipping search');
     return false;
   }
 
@@ -675,335 +798,309 @@
   }
 
   /**
-   * Search DuckDuckGo HTML (scraping search results)
-   * Uses CORS proxy to bypass restrictions in userscript context
-   * Optimized for speed with parallel proxy attempts
+   * Web search using DuckDuckGo HTML
+   * In Firefox chrome context, we have elevated privileges and can fetch directly
+   * Based on the approach used in Hana browser extension
    */
-  async function searchDuckDuckGo(query, limit = 5) {
+  
+  // Search results cache
+  const searchCache = new Map();
+  const CACHE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+  
+  async function searchWeb(query, limit = 5) {
     if (!isWebSearchEnabled()) {
       return null;
     }
 
-    try {
-      console.log('[URLBar LLM] Searching DuckDuckGo for:', query);
-      const startTime = Date.now();
-      
-      // Try DuckDuckGo Lite first (simpler HTML, more reliable parsing)
-      const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
-      
-      // List of CORS proxies - multiple options for reliability
-      const corsProxies = [
-        (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-        (url) => `https://proxy.cors.sh/${url}`
-      ];
-      
-      // Fetch with timeout helper
-      const fetchWithTimeout = async (proxyFn, timeout = 5000) => {
-        const proxyUrl = proxyFn(searchUrl);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), timeout);
-        
-        try {
-          const response = await fetch(proxyUrl, {
-            headers: {
-              'Accept': 'text/html,application/xhtml+xml,text/plain,*/*'
-            },
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeoutId);
-          
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}`);
-          }
-          
-          const html = await response.text();
-          
-          // Validate response - should be HTML with some content
-          if (html && html.length > 500) {
-            // Check it's not an error page
-            const lowerHtml = html.toLowerCase();
-            if (!lowerHtml.includes('"error"') && 
-                !lowerHtml.includes('access denied') && 
-                !lowerHtml.includes('403 forbidden')) {
-              return html;
-            }
-          }
-          throw new Error('Invalid response');
-        } catch (e) {
-          clearTimeout(timeoutId);
-          throw e;
-        }
-      };
-      
-      // Try proxies - race them but with a fallback for older Firefox
-      let html = null;
-      
-      // Create promise that races all proxies
-      const racePromises = corsProxies.map(proxy => 
-        fetchWithTimeout(proxy, 5000).catch(e => {
-          // Return a rejected marker instead of throwing
-          return { __failed: true, error: e };
-        })
-      );
-      
-      // Wait for all to settle and pick first success
-      const results = await Promise.all(racePromises);
-      for (const result of results) {
-        if (result && !result.__failed) {
-          html = result;
-          break;
-        }
-      }
-      
-      // If parallel failed, try sequentially as fallback
-      if (!html) {
-        console.log('[URLBar LLM] Parallel fetch failed, trying sequential...');
-        for (const proxyFn of corsProxies) {
-          try {
-            html = await fetchWithTimeout(proxyFn, 6000);
-            if (html) {
-              console.log('[URLBar LLM] Sequential fetch succeeded');
-              break;
-            }
-          } catch (e) {
-            console.warn('[URLBar LLM] Proxy failed:', e.message);
-          }
-        }
-      }
-      
-      if (!html) {
-        console.error('[URLBar LLM] All proxies failed');
-        return null;
-      }
-      
-      console.log('[URLBar LLM] Got valid HTML response in', Date.now() - startTime, 'ms');
-      
-      // Parse results from DuckDuckGo HTML
-      const searchResults = parseDuckDuckGoHTML(html, limit);
-      
-      if (searchResults.length === 0) {
-        console.log('[URLBar LLM] No search results found in HTML');
-        // Try alternative: use DuckDuckGo HTML version instead of Lite
-        return await searchDuckDuckGoFallback(query, limit);
-      }
+    const startTime = Date.now();
+    console.log('[URLBar LLM] Searching for:', query);
+    
+    // Check cache first
+    const cacheKey = `${query}:${limit}`;
+    const cached = searchCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < CACHE_TIMEOUT) {
+      console.log('[URLBar LLM] Using cached results for:', query);
+      return cached.results;
+    }
 
-      console.log('[URLBar LLM] Found', searchResults.length, 'search results in', Date.now() - startTime, 'ms');
-      return searchResults;
+    try {
+      // Try DuckDuckGo HTML search (direct fetch - works in chrome context)
+      const results = await searchDuckDuckGoDirect(query, limit);
+      
+      if (results && results.length > 0) {
+        // Cache results
+        searchCache.set(cacheKey, { results, timestamp: Date.now() });
+        console.log('[URLBar LLM] Search completed in', Date.now() - startTime, 'ms, found', results.length, 'results');
+        return results;
+      }
+      
+      // Fallback to SearXNG if DDG fails
+      console.log('[URLBar LLM] DDG failed, trying SearXNG...');
+      const searxResults = await searchSearXNG(query, limit);
+      
+      if (searxResults && searxResults.length > 0) {
+        searchCache.set(cacheKey, { results: searxResults, timestamp: Date.now() });
+        return searxResults;
+      }
+      
+      console.warn('[URLBar LLM] All search methods failed');
+      return null;
 
     } catch (error) {
-      console.error('[URLBar LLM] DuckDuckGo search failed:', error);
+      console.error('[URLBar LLM] Web search failed:', error);
       return null;
     }
   }
   
+  // Keep the old function name for compatibility
+  const searchDuckDuckGo = searchWeb;
+  
   /**
-   * Fallback search using DuckDuckGo HTML version
+   * Direct DuckDuckGo search using XMLHttpRequest
+   * XMLHttpRequest in chrome context bypasses CORS restrictions
    */
-  async function searchDuckDuckGoFallback(query, limit = 5) {
-    try {
-      console.log('[URLBar LLM] Trying fallback search with html.duckduckgo.com...');
+  async function searchDuckDuckGoDirect(query, limit = 5) {
+    return new Promise((resolve) => {
+      const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      console.log('[URLBar LLM] Fetching DuckDuckGo:', url);
       
-      // Try the regular HTML version (different structure than Lite)
-      const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = 8000;
       
-      // Try multiple proxies
-      const proxies = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`,
-        `https://corsproxy.io/?${encodeURIComponent(searchUrl)}`
-      ];
+      xhr.onload = function() {
+        if (xhr.status === 200) {
+          const html = xhr.responseText;
+          console.log('[URLBar LLM] Got DuckDuckGo HTML, length:', html.length);
+          
+          if (html && html.length > 1000 && html.includes('result')) {
+            const results = parseDuckDuckGoHTML(html, limit);
+            resolve(results.length > 0 ? results : null);
+          } else {
+            console.warn('[URLBar LLM] DuckDuckGo returned invalid response');
+            resolve(null);
+          }
+        } else {
+          console.warn('[URLBar LLM] DuckDuckGo HTTP error:', xhr.status);
+          resolve(null);
+        }
+      };
       
-      for (const proxyUrl of proxies) {
-        try {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 8000);
-          
-          const response = await fetch(proxyUrl, {
-            headers: { 'Accept': 'text/html,*/*' },
-            signal: controller.signal
-          });
-          
-          clearTimeout(timeoutId);
-          
-          if (!response.ok) continue;
-          
-          const html = await response.text();
-          if (!html || html.length < 500) continue;
-          
-          console.log('[URLBar LLM] Fallback got HTML, length:', html.length);
-          const results = parseDuckDuckGoHTML(html, limit);
+      xhr.onerror = function() {
+        console.warn('[URLBar LLM] DuckDuckGo request error');
+        resolve(null);
+      };
+      
+      xhr.ontimeout = function() {
+        console.warn('[URLBar LLM] DuckDuckGo request timeout');
+        resolve(null);
+      };
+      
+      xhr.open('GET', url, true);
+      xhr.setRequestHeader('Accept', 'text/html,application/xhtml+xml');
+      xhr.send();
+    });
+  }
+  
+  /**
+   * Fallback to SearXNG public instances
+   */
+  async function searchSearXNG(query, limit = 5) {
+    const instances = [
+      'https://searx.be',
+      'https://search.ononoki.org',
+      'https://searx.tiekoetter.com'
+    ];
+    
+    for (const instance of instances) {
+      try {
+        const searchUrl = `${instance}/search?q=${encodeURIComponent(query)}&format=json&categories=general`;
+        
+        const response = await Promise.race([
+          fetch(searchUrl, { headers: { 'Accept': 'application/json' } }),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+        ]);
+        
+        if (!response.ok) continue;
+        
+        const data = await response.json();
+        
+        if (data.results && data.results.length > 0) {
+          const results = data.results.slice(0, limit).map((r, i) => {
+            let source = '';
+            try {
+              source = new URL(r.url).hostname.replace('www.', '');
+            } catch (e) {
+              source = r.engine || 'unknown';
+            }
+            
+            return {
+              title: r.title || '',
+              url: r.url || '',
+              snippet: r.content || r.title || '',
+              source: source,
+              index: i + 1
+            };
+          }).filter(r => r.url && r.title);
           
           if (results.length > 0) {
+            console.log('[URLBar LLM] SearXNG found', results.length, 'results from', instance);
             return results;
           }
-        } catch (e) {
-          console.warn('[URLBar LLM] Fallback proxy failed:', e.message);
         }
+      } catch (e) {
+        console.warn('[URLBar LLM] SearXNG instance failed:', instance, e.message);
       }
-      
-      return null;
-      
-    } catch (error) {
-      console.warn('[URLBar LLM] Fallback search failed:', error.message);
-      return null;
     }
+    
+    return null;
   }
 
   /**
    * Parse DuckDuckGo HTML to extract search results
-   * Supports both regular HTML and Lite versions
+   * Uses multiple selector strategies for robustness (inspired by Hana)
    */
   function parseDuckDuckGoHTML(html, limit) {
     try {
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
       
-      const results = [];
+      let results = [];
       
-      // Debug: Log a snippet of the HTML structure
-      console.log('[URLBar LLM] HTML snippet:', html.substring(0, 500));
+      // Strategy 1: Try standard result container selectors
+      const resultSelectors = [
+        'div.results_links_deep',
+        'div.result',
+        'div[data-result]',
+        '.result',
+        '.web-result'
+      ];
       
-      // Method 1: DuckDuckGo Lite - look for links in the zero-click and web results
-      // The Lite version has links directly, not in uddg= format
-      const allLinks = doc.querySelectorAll('a[href]');
-      console.log('[URLBar LLM] Found', allLinks.length, 'total links in document');
-      
-      // Filter for external result links (skip DDG internal links)
-      const externalLinks = [];
-      for (const link of allLinks) {
-        const href = link.getAttribute('href') || '';
-        const text = link.textContent.trim();
-        
-        // Skip empty, internal, or navigation links
-        if (!href || !text || text.length < 5) continue;
-        if (href.startsWith('/') || href.startsWith('#') || href.startsWith('?')) continue;
-        if (href.includes('duckduckgo.com')) continue;
-        if (href.includes('javascript:')) continue;
-        
-        // Clean the URL (handle uddg= redirects)
-        let cleanUrl = cleanDDGUrl(href);
-        
-        // Must be a valid http(s) URL
-        if (!cleanUrl.startsWith('http')) continue;
-        
-        // Skip if we already have this URL
-        if (externalLinks.some(l => l.url === cleanUrl)) continue;
-        
-        externalLinks.push({ url: cleanUrl, title: text });
-      }
-      
-      console.log('[URLBar LLM] Found', externalLinks.length, 'external links');
-      
-      // Add external links as results
-      for (const link of externalLinks) {
-        if (results.length >= limit) break;
-        
-        try {
-          const urlObj = new URL(link.url);
-          const source = urlObj.hostname.replace('www.', '');
+      for (const selector of resultSelectors) {
+        const elements = doc.querySelectorAll(selector);
+        if (elements.length > 0) {
+          console.log('[URLBar LLM] Found', elements.length, 'results with selector:', selector);
           
-          // Try to find a snippet near this link
-          let snippet = link.title;
-          
-          results.push({
-            title: link.title,
-            url: link.url,
-            snippet: snippet,
-            source: source
-          });
-          
-          console.log('[URLBar LLM] Found result:', link.title.substring(0, 40) + '...', '|', source);
-        } catch (e) {
-          // Invalid URL, skip
-        }
-      }
-      
-      // Method 2: If we found nothing, try structured result divs (html.duckduckgo.com format)
-      if (results.length === 0) {
-        console.log('[URLBar LLM] Trying structured HTML format...');
-        
-        // html.duckduckgo.com uses divs with class "result" or "web-result"
-        const resultDivs = doc.querySelectorAll('.result, .web-result, .results_links');
-        console.log('[URLBar LLM] Found', resultDivs.length, 'result divs');
-        
-        for (const div of resultDivs) {
-          if (results.length >= limit) break;
-          
-          // Find the main link
-          const link = div.querySelector('a.result__a, a.result__url, a[href]');
-          if (!link) continue;
-          
-          let url = cleanDDGUrl(link.getAttribute('href') || '');
-          if (!url.startsWith('http') || url.includes('duckduckgo.com')) continue;
-          
-          const title = link.textContent.trim();
-          if (!title) continue;
-          
-          // Find snippet
-          const snippetEl = div.querySelector('.result__snippet, .snippet');
-          const snippet = snippetEl ? snippetEl.textContent.trim() : title;
-          
-          try {
-            const urlObj = new URL(url);
-            results.push({
-              title,
-              url,
-              snippet,
-              source: urlObj.hostname.replace('www.', '')
-            });
-            console.log('[URLBar LLM] Found structured result:', title.substring(0, 40) + '...');
-          } catch (e) {
-            // Invalid URL
+          for (const el of elements) {
+            if (results.length >= limit) break;
+            
+            const result = parseResultElement(el);
+            if (result && !results.some(r => r.url === result.url)) {
+              results.push({ ...result, index: results.length + 1 });
+            }
           }
+          
+          if (results.length > 0) break; // Use first successful selector
         }
       }
       
-      // Method 3: Parse table-based Lite format more carefully
+      // Strategy 2: If no results, try finding links with uddg parameter
       if (results.length === 0) {
-        console.log('[URLBar LLM] Trying table-based Lite format...');
+        console.log('[URLBar LLM] Trying uddg link extraction...');
+        const uddgLinks = doc.querySelectorAll('a[href*="uddg="]');
         
-        // In Lite, results are in tables. Look for all table cells with links
-        const tableCells = doc.querySelectorAll('td');
-        console.log('[URLBar LLM] Found', tableCells.length, 'table cells');
-        
-        for (const cell of tableCells) {
+        for (const link of uddgLinks) {
           if (results.length >= limit) break;
-          
-          const link = cell.querySelector('a[href]');
-          if (!link) continue;
           
           let url = cleanDDGUrl(link.getAttribute('href') || '');
           if (!url.startsWith('http') || url.includes('duckduckgo.com')) continue;
           
           const title = link.textContent.trim();
           if (!title || title.length < 5) continue;
-          
-          // Skip duplicates
           if (results.some(r => r.url === url)) continue;
           
           try {
-            const urlObj = new URL(url);
             results.push({
               title,
               url,
               snippet: title,
-              source: urlObj.hostname.replace('www.', '')
+              source: new URL(url).hostname.replace('www.', ''),
+              index: results.length + 1
             });
-            console.log('[URLBar LLM] Found table result:', title.substring(0, 40) + '...');
-          } catch (e) {
-            // Invalid URL
-          }
+          } catch (e) { }
         }
       }
       
-      console.log('[URLBar LLM] Successfully parsed', results.length, 'results');
-      return results;
+      // Sort by relevance (longer snippets = more relevant)
+      results.sort((a, b) => (b.snippet?.length || 0) - (a.snippet?.length || 0));
+      
+      console.log('[URLBar LLM] Parsed', results.length, 'results from DuckDuckGo');
+      return results.slice(0, limit);
       
     } catch (error) {
       console.error('[URLBar LLM] Failed to parse DuckDuckGo HTML:', error);
       return [];
+    }
+  }
+  
+  /**
+   * Parse a single result element using multiple selector strategies
+   */
+  function parseResultElement(el) {
+    try {
+      // Try multiple title selectors
+      const titleSelectors = [
+        'a.result__a',
+        '.result__title a',
+        'h3 a',
+        '.title a',
+        'a[data-testid="result-title-a"]'
+      ];
+      
+      let title = '';
+      let linkEl = null;
+      
+      for (const selector of titleSelectors) {
+        linkEl = el.querySelector(selector);
+        if (linkEl) {
+          title = linkEl.textContent.trim();
+          if (title) break;
+        }
+      }
+      
+      if (!title || !linkEl) return null;
+      
+      // Get URL
+      let url = linkEl.getAttribute('href') || '';
+      url = cleanDDGUrl(url);
+      
+      if (!url.startsWith('http') || url.includes('duckduckgo.com')) {
+        return null;
+      }
+      
+      // Try multiple snippet selectors
+      const snippetSelectors = [
+        'a.result__snippet',
+        '.result__snippet',
+        '.snippet',
+        '.result__body'
+      ];
+      
+      let snippet = '';
+      for (const selector of snippetSelectors) {
+        const snippetEl = el.querySelector(selector);
+        if (snippetEl) {
+          snippet = snippetEl.textContent.trim();
+          if (snippet) break;
+        }
+      }
+      
+      // Use title as fallback snippet
+      if (!snippet) snippet = title;
+      
+      // Quality check
+      if (title.length < 3 || url.length < 10) {
+        return null;
+      }
+      
+      return {
+        title,
+        url,
+        snippet,
+        source: new URL(url).hostname.replace('www.', '')
+      };
+      
+    } catch (e) {
+      return null;
     }
   }
   
