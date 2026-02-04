@@ -147,10 +147,16 @@
    * Combines language-agnostic structural patterns with multilingual keywords
    * Inspired by Hana's lightweightWebSearchEnhancer
    */
-  function queryNeedsWebSearchFast(query, conversationContext = '') {
+  function queryNeedsWebSearchFast(query, isFollowUp = false) {
     const trimmedQuery = query.trim();
     const lowerQuery = trimmedQuery.toLowerCase();
     const wordCount = trimmedQuery.split(/\s+/).length;
+    
+    // Skip search for follow-up messages in a conversation
+    if (isFollowUp) {
+      console.log('[URLBar LLM] No search: follow-up message');
+      return false;
+    }
     
     // ========================================
     // 1. CLEAR "NO SEARCH" PATTERNS (check first)
@@ -2033,7 +2039,9 @@ Provide a direct, informative answer with citations:`;
       // Use fast heuristic instead of LLM classification for speed
       let needsSearch = false;
       if (isWebSearchEnabled() && supportsWebSearch) {
-        needsSearch = queryNeedsWebSearchFast(query);
+        // Pass isFollowUp=true if there's already a conversation (more than just the current user message)
+        const isFollowUp = conversationHistory.length > 1;
+        needsSearch = queryNeedsWebSearchFast(query, isFollowUp);
       }
       
       if (needsSearch) {
