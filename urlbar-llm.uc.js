@@ -669,14 +669,16 @@
       // Try DuckDuckGo Lite first (simpler HTML, more reliable parsing)
       const searchUrl = `https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(query)}`;
       
-      // List of CORS proxies - try fastest first
+      // List of CORS proxies - multiple options for reliability
       const corsProxies = [
         (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`
+        (url) => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+        (url) => `https://proxy.cors.sh/${url}`
       ];
       
-      // Race the proxies for faster response
-      const fetchWithTimeout = async (proxyFn, timeout = 4000) => {
+      // Fetch with timeout helper
+      const fetchWithTimeout = async (proxyFn, timeout = 5000) => {
         const proxyUrl = proxyFn(searchUrl);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -684,8 +686,7 @@
         try {
           const response = await fetch(proxyUrl, {
             headers: {
-              'Accept': 'text/html,application/xhtml+xml',
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/120.0'
+              'Accept': 'text/html,application/xhtml+xml,text/plain,*/*'
             },
             signal: controller.signal
           });
@@ -698,8 +699,15 @@
           
           const html = await response.text();
           
-          if (html && html.length > 500 && !html.includes('error') && !html.includes('blocked')) {
-            return html;
+          // Validate response - should be HTML with some content
+          if (html && html.length > 500) {
+            // Check it's not an error page
+            const lowerHtml = html.toLowerCase();
+            if (!lowerHtml.includes('"error"') && 
+                !lowerHtml.includes('access denied') && 
+                !lowerHtml.includes('403 forbidden')) {
+              return html;
+            }
           }
           throw new Error('Invalid response');
         } catch (e) {
@@ -708,29 +716,101 @@
         }
       };
       
-      // Try proxies in parallel, use first successful result
+      // Try proxies - race them but with a fallback for older Firefox
       let html = null;
-      try {
-        html = await Promise.any(corsProxies.map(proxy => fetchWithTimeout(proxy, 4000)));
-        console.log('[URLBar LLM] Got valid HTML response in', Date.now() - startTime, 'ms');
-      } catch (e) {
+      
+      // Create promise that races all proxies
+      const racePromises = corsProxies.map(proxy => 
+        fetchWithTimeout(proxy, 5000).catch(e => {
+          // Return a rejected marker instead of throwing
+          return { __failed: true, error: e };
+        })
+      );
+      
+      // Wait for all to settle and pick first success
+      const results = await Promise.all(racePromises);
+      for (const result of results) {
+        if (result && !result.__failed) {
+          html = result;
+          break;
+        }
+      }
+      
+      // If parallel failed, try sequentially as fallback
+      if (!html) {
+        console.log('[URLBar LLM] Parallel fetch failed, trying sequential...');
+        for (const proxyFn of corsProxies) {
+          try {
+            html = await fetchWithTimeout(proxyFn, 6000);
+            if (html) {
+              console.log('[URLBar LLM] Sequential fetch succeeded');
+              break;
+            }
+          } catch (e) {
+            console.warn('[URLBar LLM] Proxy failed:', e.message);
+          }
+        }
+      }
+      
+      if (!html) {
         console.error('[URLBar LLM] All proxies failed');
         return null;
       }
       
-      // Parse results from DuckDuckGo HTML
-      const results = parseDuckDuckGoHTML(html, limit);
+      console.log('[URLBar LLM] Got valid HTML response in', Date.now() - startTime, 'ms');
       
-      if (results.length === 0) {
+      // Parse results from DuckDuckGo HTML
+      const searchResults = parseDuckDuckGoHTML(html, limit);
+      
+      if (searchResults.length === 0) {
         console.log('[URLBar LLM] No search results found in HTML');
-        return null;
+        // Try alternative: use DuckDuckGo HTML version instead of Lite
+        return await searchDuckDuckGoFallback(query, limit);
       }
 
-      console.log('[URLBar LLM] Found', results.length, 'search results in', Date.now() - startTime, 'ms');
-      return results;
+      console.log('[URLBar LLM] Found', searchResults.length, 'search results in', Date.now() - startTime, 'ms');
+      return searchResults;
 
     } catch (error) {
       console.error('[URLBar LLM] DuckDuckGo search failed:', error);
+      return null;
+    }
+  }
+  
+  /**
+   * Fallback search using DuckDuckGo HTML version
+   */
+  async function searchDuckDuckGoFallback(query, limit = 5) {
+    try {
+      console.log('[URLBar LLM] Trying fallback search...');
+      
+      // Try the regular HTML version
+      const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`;
+      
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      
+      const response = await fetch(proxyUrl, {
+        headers: { 'Accept': 'text/html,*/*' },
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        return null;
+      }
+      
+      const html = await response.text();
+      if (!html || html.length < 500) {
+        return null;
+      }
+      
+      return parseDuckDuckGoHTML(html, limit);
+      
+    } catch (error) {
+      console.warn('[URLBar LLM] Fallback search failed:', error.message);
       return null;
     }
   }
