@@ -61,6 +61,24 @@
   let currentAssistantMessage = ""; // Track current streaming response
   let currentSearchSources = []; // Track sources used for current response
 
+  // ============================================
+  // Load Mozilla Readability for content extraction
+  // ============================================
+  let ReadabilityClass = null;
+  
+  // Try to load Readability.js from the same directory
+  try {
+    // For fx-autoconfig, scripts are in chrome://userchrome/content/js/
+    const scriptPath = "chrome://userchrome/content/js/Readability.js";
+    const scope = {};
+    Services.scriptloader.loadSubScript(scriptPath, scope);
+    ReadabilityClass = scope.Readability;
+    console.log("[URLBar LLM] Loaded Mozilla Readability from", scriptPath);
+  } catch (e) {
+    console.warn("[URLBar LLM] Could not load Readability.js:", e.message);
+    // Readability will be null, fallback extraction will be used
+  }
+
   // Get preferences - Direct access to preference service using Components
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
     .getService(Components.interfaces.nsIPrefBranch);
@@ -68,10 +86,14 @@
   const scriptSecurityManager = Components.classes["@mozilla.org/scriptsecuritymanager;1"]
     .getService(Components.interfaces.nsIScriptSecurityManager);
   
+  const scriptLoader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
+    .getService(Components.interfaces.mozIJSSubScriptLoader);
+  
   // Create a minimal Services-like object
   const Services = {
     prefs: prefsService,
-    scriptSecurityManager: scriptSecurityManager
+    scriptSecurityManager: scriptSecurityManager,
+    scriptloader: scriptLoader
   };
   
   function getPref(name, defaultValue) {
@@ -782,32 +804,46 @@
    */
   async function searchDuckDuckGoFallback(query, limit = 5) {
     try {
-      console.log('[URLBar LLM] Trying fallback search...');
+      console.log('[URLBar LLM] Trying fallback search with html.duckduckgo.com...');
       
-      // Try the regular HTML version
+      // Try the regular HTML version (different structure than Lite)
       const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`;
       
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      // Try multiple proxies
+      const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(searchUrl)}`,
+        `https://corsproxy.io/?${encodeURIComponent(searchUrl)}`
+      ];
       
-      const response = await fetch(proxyUrl, {
-        headers: { 'Accept': 'text/html,*/*' },
-        signal: controller.signal
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        return null;
+      for (const proxyUrl of proxies) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 8000);
+          
+          const response = await fetch(proxyUrl, {
+            headers: { 'Accept': 'text/html,*/*' },
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
+          
+          if (!response.ok) continue;
+          
+          const html = await response.text();
+          if (!html || html.length < 500) continue;
+          
+          console.log('[URLBar LLM] Fallback got HTML, length:', html.length);
+          const results = parseDuckDuckGoHTML(html, limit);
+          
+          if (results.length > 0) {
+            return results;
+          }
+        } catch (e) {
+          console.warn('[URLBar LLM] Fallback proxy failed:', e.message);
+        }
       }
       
-      const html = await response.text();
-      if (!html || html.length < 500) {
-        return null;
-      }
-      
-      return parseDuckDuckGoHTML(html, limit);
+      return null;
       
     } catch (error) {
       console.warn('[URLBar LLM] Fallback search failed:', error.message);
@@ -826,146 +862,138 @@
       
       const results = [];
       
-      // Try DuckDuckGo Lite format first (table-based)
-      // Lite uses table rows with specific structure
-      const liteResults = doc.querySelectorAll('table:not(.header) tr');
-      if (liteResults.length > 0) {
-        console.log('[URLBar LLM] Trying Lite format, found', liteResults.length, 'table rows');
+      // Debug: Log a snippet of the HTML structure
+      console.log('[URLBar LLM] HTML snippet:', html.substring(0, 500));
+      
+      // Method 1: DuckDuckGo Lite - look for links in the zero-click and web results
+      // The Lite version has links directly, not in uddg= format
+      const allLinks = doc.querySelectorAll('a[href]');
+      console.log('[URLBar LLM] Found', allLinks.length, 'total links in document');
+      
+      // Filter for external result links (skip DDG internal links)
+      const externalLinks = [];
+      for (const link of allLinks) {
+        const href = link.getAttribute('href') || '';
+        const text = link.textContent.trim();
         
-        let currentResult = null;
+        // Skip empty, internal, or navigation links
+        if (!href || !text || text.length < 5) continue;
+        if (href.startsWith('/') || href.startsWith('#') || href.startsWith('?')) continue;
+        if (href.includes('duckduckgo.com')) continue;
+        if (href.includes('javascript:')) continue;
         
-        for (const row of liteResults) {
-          if (results.length >= limit) break;
+        // Clean the URL (handle uddg= redirects)
+        let cleanUrl = cleanDDGUrl(href);
+        
+        // Must be a valid http(s) URL
+        if (!cleanUrl.startsWith('http')) continue;
+        
+        // Skip if we already have this URL
+        if (externalLinks.some(l => l.url === cleanUrl)) continue;
+        
+        externalLinks.push({ url: cleanUrl, title: text });
+      }
+      
+      console.log('[URLBar LLM] Found', externalLinks.length, 'external links');
+      
+      // Add external links as results
+      for (const link of externalLinks) {
+        if (results.length >= limit) break;
+        
+        try {
+          const urlObj = new URL(link.url);
+          const source = urlObj.hostname.replace('www.', '');
           
-          // Look for link in row (title link)
-          const link = row.querySelector('a.result-link, a[href*="uddg="], td a[href]');
-          if (link) {
-            let url = link.getAttribute('href') || '';
-            const title = link.textContent.trim();
-            
-            // Clean DuckDuckGo redirect URL
-            url = cleanDDGUrl(url);
-            
-            if (url && title && !url.includes('duckduckgo.com') && url.startsWith('http')) {
-              currentResult = { title, url, snippet: title };
-            }
-          }
+          // Try to find a snippet near this link
+          let snippet = link.title;
           
-          // Look for snippet (usually in following rows or same row)
-          const snippetCell = row.querySelector('td.result-snippet, td:not(:has(a))');
-          if (snippetCell && currentResult) {
-            const snippetText = snippetCell.textContent.trim();
-            if (snippetText && snippetText.length > 10 && !snippetText.startsWith('http')) {
-              currentResult.snippet = snippetText;
-            }
-          }
+          results.push({
+            title: link.title,
+            url: link.url,
+            snippet: snippet,
+            source: source
+          });
           
-          // Commit result if we have URL and title
-          if (currentResult && currentResult.url && currentResult.title) {
-            try {
-              const urlObj = new URL(currentResult.url);
-              currentResult.source = urlObj.hostname.replace('www.', '');
-              results.push(currentResult);
-              console.log('[URLBar LLM] Found Lite result:', currentResult.title.substring(0, 40) + '...', '|', currentResult.source);
-            } catch (e) {
-              // Invalid URL
-            }
-            currentResult = null;
-          }
+          console.log('[URLBar LLM] Found result:', link.title.substring(0, 40) + '...', '|', source);
+        } catch (e) {
+          // Invalid URL, skip
         }
       }
       
-      // If Lite parsing failed, try regular HTML format
+      // Method 2: If we found nothing, try structured result divs (html.duckduckgo.com format)
       if (results.length === 0) {
-        console.log('[URLBar LLM] Trying regular HTML format...');
+        console.log('[URLBar LLM] Trying structured HTML format...');
         
-        // DuckDuckGo uses divs with class "result" or similar
-        const resultSelectors = [
-          'div.result',
-          'div.results_links_deep', 
-          'div.web-result',
-          'div.result--web',
-          '.result__body',
-          'div[class*="result"]'
-        ];
+        // html.duckduckgo.com uses divs with class "result" or "web-result"
+        const resultDivs = doc.querySelectorAll('.result, .web-result, .results_links');
+        console.log('[URLBar LLM] Found', resultDivs.length, 'result divs');
         
-        let resultElements = [];
-        for (const selector of resultSelectors) {
-          resultElements = doc.querySelectorAll(selector);
-          if (resultElements.length > 0) {
-            console.log('[URLBar LLM] Found', resultElements.length, 'results using selector:', selector);
-            break;
-          }
-        }
-        
-        for (const resultDiv of resultElements) {
+        for (const div of resultDivs) {
           if (results.length >= limit) break;
           
+          // Find the main link
+          const link = div.querySelector('a.result__a, a.result__url, a[href]');
+          if (!link) continue;
+          
+          let url = cleanDDGUrl(link.getAttribute('href') || '');
+          if (!url.startsWith('http') || url.includes('duckduckgo.com')) continue;
+          
+          const title = link.textContent.trim();
+          if (!title) continue;
+          
+          // Find snippet
+          const snippetEl = div.querySelector('.result__snippet, .snippet');
+          const snippet = snippetEl ? snippetEl.textContent.trim() : title;
+          
           try {
-            // Find title link - try multiple selectors
-            const titleLink = resultDiv.querySelector('a.result__a, a.result-link, a[class*="result"], h2 a, .result__title a, a[href*="uddg="]');
-            if (!titleLink) continue;
-            
-            const title = titleLink.textContent.trim();
-            if (!title) continue;
-            
-            let url = titleLink.getAttribute('href') || '';
-            url = cleanDDGUrl(url);
-            
-            // Validate URL
-            if (!url || !url.startsWith('http') || url.includes('duckduckgo.com')) {
-              continue;
-            }
-            
-            // Find snippet
-            const snippetElement = resultDiv.querySelector('a.result__snippet, .result__snippet, .snippet, td.result-snippet');
-            const snippet = snippetElement ? snippetElement.textContent.trim() : title;
-            
             const urlObj = new URL(url);
-            const source = urlObj.hostname.replace('www.', '');
-            
             results.push({
               title,
               url,
-              snippet: snippet || title,
-              source
+              snippet,
+              source: urlObj.hostname.replace('www.', '')
             });
-            
-            console.log('[URLBar LLM] Found result:', title.substring(0, 40) + '...', '|', source);
-            
-          } catch (parseError) {
-            console.warn('[URLBar LLM] Error parsing individual result:', parseError);
-            continue;
+            console.log('[URLBar LLM] Found structured result:', title.substring(0, 40) + '...');
+          } catch (e) {
+            // Invalid URL
           }
         }
       }
       
-      // Last resort: find any links that look like search results
+      // Method 3: Parse table-based Lite format more carefully
       if (results.length === 0) {
-        console.log('[URLBar LLM] Trying fallback link extraction...');
-        const allLinks = doc.querySelectorAll('a[href*="uddg="]');
-        console.log('[URLBar LLM] Found', allLinks.length, 'DDG redirect links');
+        console.log('[URLBar LLM] Trying table-based Lite format...');
         
-        for (const link of allLinks) {
+        // In Lite, results are in tables. Look for all table cells with links
+        const tableCells = doc.querySelectorAll('td');
+        console.log('[URLBar LLM] Found', tableCells.length, 'table cells');
+        
+        for (const cell of tableCells) {
           if (results.length >= limit) break;
           
-          let url = link.getAttribute('href') || '';
-          url = cleanDDGUrl(url);
+          const link = cell.querySelector('a[href]');
+          if (!link) continue;
           
-          if (url && url.startsWith('http') && !url.includes('duckduckgo.com')) {
-            const title = link.textContent.trim() || url;
-            try {
-              const urlObj = new URL(url);
-              results.push({
-                title,
-                url,
-                snippet: title,
-                source: urlObj.hostname.replace('www.', '')
-              });
-              console.log('[URLBar LLM] Found fallback result:', title.substring(0, 40) + '...');
-            } catch (e) {
-              // Invalid URL
-            }
+          let url = cleanDDGUrl(link.getAttribute('href') || '');
+          if (!url.startsWith('http') || url.includes('duckduckgo.com')) continue;
+          
+          const title = link.textContent.trim();
+          if (!title || title.length < 5) continue;
+          
+          // Skip duplicates
+          if (results.some(r => r.url === url)) continue;
+          
+          try {
+            const urlObj = new URL(url);
+            results.push({
+              title,
+              url,
+              snippet: title,
+              source: urlObj.hostname.replace('www.', '')
+            });
+            console.log('[URLBar LLM] Found table result:', title.substring(0, 40) + '...');
+          } catch (e) {
+            // Invalid URL
           }
         }
       }
@@ -985,30 +1013,52 @@
   function cleanDDGUrl(url) {
     if (!url) return '';
     
-    // Handle //duckduckgo.com/l/?uddg= format
-    if (url.includes('//duckduckgo.com/l/?uddg=')) {
-      url = url.replace(/.*\/\/duckduckgo\.com\/l\/\?uddg=/, '');
-      url = decodeURIComponent(url.split('&')[0]);
-    } 
-    // Handle uddg= parameter anywhere
-    else if (url.includes('uddg=')) {
-      const match = url.match(/uddg=([^&]+)/);
-      if (match) {
-        url = decodeURIComponent(match[1]);
+    try {
+      // Handle //duckduckgo.com/l/?uddg= format
+      if (url.includes('duckduckgo.com/l/?uddg=') || url.includes('duckduckgo.com/l?uddg=')) {
+        const match = url.match(/uddg=([^&]+)/);
+        if (match) {
+          url = decodeURIComponent(match[1]);
+        }
+      } 
+      // Handle uddg= parameter anywhere
+      else if (url.includes('uddg=')) {
+        const match = url.match(/uddg=([^&]+)/);
+        if (match) {
+          url = decodeURIComponent(match[1]);
+        }
       }
+      // Handle kh= parameter (another DDG redirect format)
+      else if (url.includes('kh=') && url.includes('duckduckgo')) {
+        const match = url.match(/kh=([^&]+)/);
+        if (match) {
+          url = decodeURIComponent(match[1]);
+        }
+      }
+      
+      // Ensure URL is properly decoded
+      if (url.includes('%')) {
+        try {
+          url = decodeURIComponent(url);
+        } catch (e) {
+          // Already decoded or invalid
+        }
+      }
+    } catch (e) {
+      console.warn('[URLBar LLM] Error cleaning URL:', e);
     }
     
     return url;
   }
 
   /**
-   * Fetch and extract main content from a webpage
+   * Fetch and extract main content from a webpage using Mozilla Readability
    * @param {string} url - The URL to fetch
    * @param {number} maxLength - Maximum content length to return
-   * @param {number} timeout - Timeout in ms (default 3000)
+   * @param {number} timeout - Timeout in ms (default 3500)
    * @returns {Promise<string|null>} - Extracted text content or null
    */
-  async function fetchPageContent(url, maxLength = 2000, timeout = 3000) {
+  async function fetchPageContent(url, maxLength = 3000, timeout = 3500) {
     try {
       // Use CORS proxy with timeout
       const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
@@ -1034,125 +1084,133 @@
         return null;
       }
       
-      // Parse and extract main content
-      const content = extractMainContent(html);
-      
-      if (!content || content.length < 50) {
-        return null;
-      }
-      
-      // Truncate if too long
-      return content.length > maxLength 
-        ? content.substring(0, maxLength) + '...'
-        : content;
-      
-    } catch (error) {
-      return null;
-    }
-  }
-
-  /**
-   * Extract main text content from HTML, removing boilerplate
-   */
-  function extractMainContent(html) {
-    try {
+      // Parse HTML
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
       
-      // Remove unwanted elements
-      const unwantedSelectors = [
-        'script', 'style', 'noscript', 'iframe', 'svg', 'canvas',
-        'nav', 'header', 'footer', 'aside', 'form',
-        '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
-        '.nav', '.navbar', '.header', '.footer', '.sidebar', '.menu',
-        '.advertisement', '.ad', '.ads', '.social', '.share', '.comments',
-        '.related', '.recommended', '.cookie', '.popup', '.modal'
-      ];
-      
-      for (const selector of unwantedSelectors) {
+      // Try Mozilla Readability first (if loaded)
+      if (ReadabilityClass) {
         try {
-          doc.querySelectorAll(selector).forEach(el => el.remove());
-        } catch (e) {
-          // Selector might be invalid, skip
+          // Clone the document as Readability modifies it
+          const docClone = doc.cloneNode(true);
+          const reader = new ReadabilityClass(docClone, {
+            charThreshold: 100
+          });
+          const article = reader.parse();
+          
+          if (article && article.textContent && article.textContent.length > 100) {
+            // Build the extracted content
+            let content = '';
+            if (article.title) {
+              content += `# ${article.title}\n\n`;
+            }
+            if (article.byline) {
+              content += `By: ${article.byline}\n\n`;
+            }
+            if (article.excerpt && article.excerpt.length > 50) {
+              content += `*${article.excerpt}*\n\n`;
+            }
+            // Use textContent for cleaner output (no HTML tags)
+            content += article.textContent;
+            
+            // Clean up and truncate
+            content = content
+              .replace(/\n{3,}/g, '\n\n')
+              .replace(/[ \t]+/g, ' ')
+              .trim();
+            
+            if (content.length > 100) {
+              console.log('[URLBar LLM] Readability extracted', content.length, 'chars from:', url);
+              return content.length > maxLength 
+                ? content.substring(0, maxLength) + '...'
+                : content;
+            }
+          }
+        } catch (readabilityError) {
+          console.warn('[URLBar LLM] Readability parsing failed:', readabilityError.message);
         }
       }
       
-      // Try to find main content container
-      const mainSelectors = [
-        'article', 'main', '[role="main"]', '.article', '.content', 
-        '.post', '.entry', '.story', '#content', '#main', '.main-content'
-      ];
-      
-      let mainElement = null;
-      for (const selector of mainSelectors) {
-        mainElement = doc.querySelector(selector);
-        if (mainElement && mainElement.textContent.trim().length > 200) {
-          break;
-        }
-        mainElement = null;
-      }
-      
-      // Fall back to body if no main content found
-      const targetElement = mainElement || doc.body;
-      if (!targetElement) return null;
-      
-      // Extract text with some structure preservation
-      const textContent = extractTextWithStructure(targetElement);
-      
-      // Clean up the text
-      return cleanExtractedText(textContent);
+      // Fallback to simple extraction
+      return extractMainContentSimple(doc, maxLength);
       
     } catch (error) {
-      console.warn('[URLBar LLM] Error extracting content:', error);
+      console.warn('[URLBar LLM] Error fetching page:', error.message);
+      return null;
+    }
+  }
+  
+  /**
+   * Simple fallback content extraction when Readability is unavailable or fails
+   */
+  function extractMainContentSimple(doc, maxLength = 2500) {
+    try {
+      // If doc is a string (HTML), parse it first
+      if (typeof doc === 'string') {
+        const parser = new DOMParser();
+        doc = parser.parseFromString(doc, 'text/html');
+      }
+      
+      // Clone to avoid modifying original
+      const docClone = doc.cloneNode(true);
+      
+      // Remove unwanted elements
+      const removeSelectors = [
+        'script', 'style', 'noscript', 'nav', 'footer', 'header', 'aside', 
+        'form', '.ad', '.ads', '.sidebar', '.menu', '.nav', '.comment', '.comments',
+        '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]'
+      ];
+      for (const selector of removeSelectors) {
+        try {
+          docClone.querySelectorAll(selector).forEach(el => el.remove());
+        } catch (e) { }
+      }
+      
+      // Try to find main content area
+      const mainSelectors = ['article', 'main', '[role="main"]', '.content', '.article', '.post', '#content'];
+      let mainEl = null;
+      for (const selector of mainSelectors) {
+        mainEl = docClone.querySelector(selector);
+        if (mainEl && mainEl.textContent.trim().length > 200) break;
+        mainEl = null;
+      }
+      
+      const targetEl = mainEl || docClone.body;
+      if (!targetEl) return null;
+      
+      // Get text from paragraphs and headings
+      const elements = targetEl.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, blockquote');
+      const texts = [];
+      
+      for (const el of elements) {
+        const text = el.textContent.trim();
+        if (text.length > 20) {
+          if (/^H[1-6]$/.test(el.tagName)) {
+            texts.push(`## ${text}`);
+          } else {
+            texts.push(text);
+          }
+        }
+      }
+      
+      let content = texts.join('\n\n');
+      
+      // If we didn't get enough from structured elements, use all text
+      if (content.length < 200 && targetEl.textContent) {
+        content = targetEl.textContent
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
+      
+      content = content.substring(0, maxLength);
+      return content.length > 50 ? content : null;
+      
+    } catch (e) {
+      console.warn('[URLBar LLM] Simple extraction failed:', e.message);
       return null;
     }
   }
 
-  /**
-   * Extract text while preserving some structure (paragraphs, headings)
-   */
-  function extractTextWithStructure(element) {
-    const blocks = [];
-    
-    // Walk through important text elements
-    const textElements = element.querySelectorAll('h1, h2, h3, h4, h5, h6, p, li, td, th, blockquote, figcaption');
-    
-    for (const el of textElements) {
-      const text = el.textContent.trim();
-      if (text.length > 10) { // Skip very short fragments
-        // Add heading markers
-        if (el.tagName.match(/^H[1-6]$/)) {
-          blocks.push(`\n## ${text}\n`);
-        } else {
-          blocks.push(text);
-        }
-      }
-    }
-    
-    // If we didn't get enough content from structured elements, fall back to innerText
-    if (blocks.join(' ').length < 500) {
-      return element.innerText || element.textContent || '';
-    }
-    
-    return blocks.join('\n\n');
-  }
-
-  /**
-   * Clean up extracted text
-   */
-  function cleanExtractedText(text) {
-    if (!text) return '';
-    
-    return text
-      // Normalize whitespace
-      .replace(/[\t ]+/g, ' ')
-      // Remove excessive newlines
-      .replace(/\n{3,}/g, '\n\n')
-      // Remove lines that are just whitespace
-      .replace(/^\s+$/gm, '')
-      // Trim
-      .trim();
-  }
 
   /**
    * Fetch content from multiple search results in parallel
