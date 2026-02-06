@@ -16,6 +16,26 @@
 (function() {
   "use strict";
 
+  // Timing and size limits (centralized constants)
+  const LIMITS = {
+    CACHE_TTL: 30 * 60 * 1000,       // 30 minutes
+    MAX_CACHE_SIZE: 50,               // Max cached search results
+    BLUR_DELAY: 300,                  // ms before blur deactivates LLM mode
+    FOCUS_RESTORE_DELAY: 100,         // ms before restoring focus after link click
+    DDG_TIMEOUT: 8000,                // DuckDuckGo request timeout (ms)
+    SEARXNG_TIMEOUT: 5000,            // SearXNG request timeout (ms)
+    PAGE_FETCH_TIMEOUT: 3500,         // Individual page content fetch timeout (ms)
+    ALL_PAGES_FETCH_TIMEOUT: 4000,    // Total timeout for all page fetches (ms)
+    MAX_PAGE_CONTENT_LENGTH: 3000,    // Max chars extracted per page
+    MAX_SIMPLE_CONTENT_LENGTH: 2500,  // Max chars for simple fallback extraction
+    MAX_SEARCH_RESULTS: 5,            // Default search result limit
+    MAX_FETCH_RESULTS: 3,             // Pages to fetch content from
+    RENDER_DEBOUNCE: 50,              // ms debounce for markdown rendering during stream
+    ANIMATION_GLOW_DURATION: 1000,    // ms for pill glow animation
+    SCROLL_DELAY: 50,                 // ms delay before scrolling to pills
+    SCROLL_DELAY_MESSAGE: 10,         // ms delay before scrolling after user message
+  };
+
   // Configuration
   const CONFIG = {
     providers: {
@@ -37,13 +57,6 @@
         baseUrl: "http://localhost:11434/api/chat",
         model: "mistral"
       }
-      // Gemini temporarily disabled
-      // gemini: {
-      //   name: "Google Gemini",
-      //   apiKey: "",
-      //   baseUrl: "https://generativelanguage.googleapis.com/v1/openai",
-      //   model: "gemini-1.5-flash"
-      // }
     },
     defaultProvider: "ollama"
   };
@@ -73,9 +86,9 @@
     const scope = {};
     Services.scriptloader.loadSubScript(scriptPath, scope);
     ReadabilityClass = scope.Readability;
-    console.log("[URLBar LLM] Loaded Mozilla Readability from", scriptPath);
+    log("Loaded Mozilla Readability from", scriptPath);
   } catch (e) {
-    console.warn("[URLBar LLM] Could not load Readability.js:", e.message);
+    logWarn("Could not load Readability.js:", e.message);
     // Readability will be null, fallback extraction will be used
   }
 
@@ -128,8 +141,23 @@
         Services.prefs.setIntPref(name, value);
       }
     } catch (e) {
-      console.error("[URLBar LLM] Failed to set preference:", e);
+      logError("Failed to set preference:", e);
     }
+  }
+
+  // Debug logging (enable via about:config: extension.urlbar-llm.debug = true)
+  function log(...args) {
+    if (getPref("extension.urlbar-llm.debug", false)) {
+      console.log("[URLBar LLM]", ...args);
+    }
+  }
+
+  function logWarn(...args) {
+    console.warn("[URLBar LLM]", ...args);
+  }
+
+  function logError(...args) {
+    console.error("[URLBar LLM]", ...args);
   }
 
   // Check if LLM is enabled
@@ -143,195 +171,6 @@
   }
 
   /**
-   * Robust web search detection
-   * Combines language-agnostic structural patterns with multilingual keywords
-   * Inspired by Hana's lightweightWebSearchEnhancer
-   */
-  function queryNeedsWebSearchFast(query, isFollowUp = false) {
-    const trimmedQuery = query.trim();
-    const lowerQuery = trimmedQuery.toLowerCase();
-    const wordCount = trimmedQuery.split(/\s+/).length;
-    
-    // Skip search for follow-up messages in a conversation
-    if (isFollowUp) {
-      console.log('[URLBar LLM] No search: follow-up message');
-      return false;
-    }
-    
-    // ========================================
-    // 1. CLEAR "NO SEARCH" PATTERNS (check first)
-    // ========================================
-    
-    // Code/programming patterns (universal syntax)
-    const codePatterns = [
-      /[{}\[\]();]/, // Brackets, braces, semicolons
-      /\b(function|const|let|var|class|def|import|return|if|else|for|while)\b/,
-      /\b(console\.|print\(|System\.|std::)/,
-      /\.(js|ts|py|java|cpp|c|go|rs|rb|php|html|css|json|xml|yaml|md)$/i,
-      /^```/, // Code block markers
-    ];
-    
-    for (const pattern of codePatterns) {
-      if (pattern.test(trimmedQuery)) {
-        console.log('[URLBar LLM] No search: code pattern');
-        return false;
-      }
-    }
-    
-    // Mathematical expressions (universal)
-    if (/\d+\s*[\+\-\*\/\^]\s*\d+/.test(trimmedQuery) || /[∫∑∏√π∞]/.test(trimmedQuery)) {
-      console.log('[URLBar LLM] No search: math expression');
-      return false;
-    }
-    
-    // Creative task keywords (multilingual)
-    const creativeKeywords = [
-      // English
-      'write me', 'create a', 'generate', 'compose', 'draft', 'make me',
-      'help me write', 'help me create', 'rewrite', 'rephrase',
-      // French
-      'écris-moi', 'écris moi', 'crée', 'génère', 'compose', 'rédige',
-      'aide-moi à écrire', 'reformule',
-      // German
-      'schreib mir', 'erstelle', 'verfasse',
-      // Spanish
-      'escríbeme', 'crea', 'genera', 'redacta',
-      // Italian
-      'scrivimi', 'crea', 'genera',
-      // Portuguese
-      'escreva', 'crie', 'gere'
-    ];
-    
-    if (creativeKeywords.some(kw => lowerQuery.includes(kw))) {
-      console.log('[URLBar LLM] No search: creative task');
-      return false;
-    }
-    
-    // Very long queries (>40 words) are usually creative/conversational
-    if (wordCount > 40) {
-      console.log('[URLBar LLM] No search: very long query');
-      return false;
-    }
-    
-    // ========================================
-    // 2. CLEAR "NEEDS SEARCH" PATTERNS
-    // ========================================
-    
-    // Recent/current keywords (multilingual)
-    const recentKeywords = [
-      // English
-      'latest', 'recent', 'current', 'today', 'now', 'breaking', 'news', 'update',
-      'this week', 'this month', 'this year', 'last week', 'last month',
-      // French
-      'dernier', 'dernière', 'récent', 'actuel', 'actuelle', "aujourd'hui", 
-      'maintenant', 'actualité', 'mise à jour', 'cette semaine', 'ce mois',
-      // German
-      'aktuell', 'neueste', 'heute', 'jetzt', 'diese woche', 'nachrichten',
-      // Spanish
-      'último', 'última', 'reciente', 'actual', 'hoy', 'ahora', 'noticias',
-      // Italian
-      'ultimo', 'ultima', 'recente', 'attuale', 'oggi', 'adesso', 'notizie',
-      // Portuguese
-      'último', 'última', 'recente', 'atual', 'hoje', 'agora', 'notícias'
-    ];
-    
-    if (recentKeywords.some(kw => lowerQuery.includes(kw))) {
-      console.log('[URLBar LLM] Needs search: recent/current keyword');
-      return true;
-    }
-    
-    // Recent years (dynamic)
-    const currentYear = new Date().getFullYear();
-    for (let y = currentYear - 1; y <= currentYear + 1; y++) {
-      if (trimmedQuery.includes(String(y))) {
-        console.log('[URLBar LLM] Needs search: year', y);
-        return true;
-      }
-    }
-    
-    // Factual question keywords (multilingual)
-    const factualKeywords = [
-      // English
-      'who is', 'who are', 'who was', 'what is the', 'what are the',
-      'when is', 'when was', 'when did', 'where is', 'where are',
-      'how much', 'how many', 'what happened', 'what time',
-      // French
-      'qui est', 'qui sont', "c'est quoi", "qu'est-ce que", 'quand est',
-      'où est', 'où sont', 'combien', "qu'est-il arrivé",
-      // German
-      'wer ist', 'was ist', 'wann ist', 'wo ist', 'wie viel',
-      // Spanish
-      'quién es', 'qué es', 'cuándo es', 'dónde está', 'cuánto',
-      // Italian
-      'chi è', 'cosa è', "cos'è", 'quando è', 'dove è', 'quanto'
-    ];
-    
-    if (factualKeywords.some(kw => lowerQuery.includes(kw))) {
-      console.log('[URLBar LLM] Needs search: factual question keyword');
-      return true;
-    }
-    
-    // Prices, currencies (universal)
-    if (/[$€£¥₹]\s*\d|\d+\s*[$€£¥₹]|\d+\s*(USD|EUR|GBP|BTC|ETH)\b/i.test(trimmedQuery)) {
-      console.log('[URLBar LLM] Needs search: price/currency pattern');
-      return true;
-    }
-    
-    // URLs or domain patterns
-    if (/\b\w+\.(com|org|net|io|ai|gov|edu|co|fr|de|es|it|uk)\b/i.test(trimmedQuery)) {
-      console.log('[URLBar LLM] Needs search: URL/domain');
-      return true;
-    }
-    
-    // Question mark with short query
-    if (/\?$/.test(trimmedQuery) && wordCount <= 12) {
-      console.log('[URLBar LLM] Needs search: short question');
-      return true;
-    }
-    
-    // Multiple proper nouns (names, places, companies)
-    const words = trimmedQuery.split(/\s+/);
-    let properNounCount = 0;
-    for (let i = 1; i < words.length; i++) {
-      if (/^[A-Z][a-zÀ-ÿ]/.test(words[i]) && !/[.!?]$/.test(words[i-1] || '')) {
-        properNounCount++;
-      }
-    }
-    if (properNounCount >= 2) {
-      console.log('[URLBar LLM] Needs search: multiple proper nouns');
-      return true;
-    }
-    
-    // Short lookup queries (2-5 words, starts with capital, not a command)
-    if (wordCount >= 2 && wordCount <= 5) {
-      const isCommand = /^(write|create|make|help|explain|translate|tell|give|show|list)/i.test(trimmedQuery);
-      const startsCapital = /^[A-Z]/.test(trimmedQuery);
-      
-      if (!isCommand && startsCapital) {
-        console.log('[URLBar LLM] Needs search: short lookup query');
-        return true;
-      }
-    }
-    
-    // Single capitalized term (1-3 words) - likely looking something up
-    if (wordCount <= 3 && /^[A-Z]/.test(trimmedQuery) && !/^(I|A|The|Le|La|Der|Die|Das|El|Il)\s/i.test(trimmedQuery)) {
-      console.log('[URLBar LLM] Needs search: capitalized lookup');
-      return true;
-    }
-    
-    // ========================================
-    // 3. DEFAULT: Search for short queries, skip for long ones
-    // ========================================
-    if (wordCount <= 8) {
-      console.log('[URLBar LLM] Default: short query, trying search');
-      return true;
-    }
-    
-    console.log('[URLBar LLM] Default: longer query, skipping search');
-    return false;
-  }
-
-  /**
    * LLM-based web search classification
    * Asks the model itself whether the question is within its knowledge scope.
    * If not, triggers a web search. This replaces pure heuristic detection.
@@ -339,12 +178,12 @@
   async function queryNeedsWebSearchLLM(query, isFollowUp = false, signal = null) {
     // Never search on follow-ups (the model already has context)
     if (isFollowUp) {
-      console.log('[URLBar LLM] No search: follow-up message');
+      log('No search: follow-up message');
       return false;
     }
 
     // Ask the LLM to classify the query
-    console.log('[URLBar LLM] Asking model to classify query for web search need:', query);
+    log('Asking model to classify query for web search need:', query);
 
     const classificationPrompt = [
       {
@@ -407,17 +246,17 @@ Do NOT explain. Just reply with one word.`
         responseText = (json.choices?.[0]?.message?.content || "").trim().toUpperCase();
       }
 
-      console.log('[URLBar LLM] Model classification response:', responseText);
+      log('Model classification response:', responseText);
 
       // The model replied SEARCH or ANSWER
       const needsSearch = responseText.includes("SEARCH");
-      console.log('[URLBar LLM] Model decided:', needsSearch ? 'needs web search' : 'can answer from knowledge');
+      log('Model decided:', needsSearch ? 'needs web search' : 'can answer from knowledge');
       return needsSearch;
 
     } catch (err) {
       // If classification fails (timeout, network error, etc.), fall back to no search
       // so the model still answers from its own knowledge
-      console.warn('[URLBar LLM] Classification request failed, defaulting to no search:', err.message);
+      logWarn('Classification request failed, defaulting to no search:', err.message);
       return false;
     }
   }
@@ -476,13 +315,13 @@ Do NOT explain. Just reply with one word.`
     }
 
     setupEventListeners(urlbar, urlbarInput);
-    console.log("[URLBar LLM] Initialized");
+    log("Initialized");
   }
 
   function setupEventListeners(urlbar, urlbarInput) {
     // Check if already initialized to prevent duplicate listeners
     if (urlbar._llmInitialized) {
-      console.log("[URLBar LLM] Already initialized, skipping duplicate setup");
+      log("Already initialized, skipping duplicate setup");
       return;
     }
     urlbar._llmInitialized = true;
@@ -573,7 +412,7 @@ Do NOT explain. Just reply with one word.`
     urlbarInput.addEventListener("blur", (e) => {
       // Don't deactivate if clicking a link
       if (isClickingLink) {
-        console.log("[URLBar LLM] Blur ignored - clicking link");
+        log("Blur ignored - clicking link");
         return;
       }
       
@@ -583,7 +422,7 @@ Do NOT explain. Just reply with one word.`
       setTimeout(() => {
         // Double check we're not clicking a link
         if (isClickingLink) {
-          console.log("[URLBar LLM] Blur ignored in timeout - clicking link");
+          log("Blur ignored in timeout - clicking link");
           return;
         }
         
@@ -605,17 +444,17 @@ Do NOT explain. Just reply with one word.`
         
         // Don't deactivate if we're clicking a link
         if (isClickingLink) {
-          console.log("[URLBar LLM] Blur ignored - isClickingLink flag set");
+          log("Blur ignored - isClickingLink flag set");
           return;
         }
         
         if (document.activeElement !== urlbarInput && isLLMMode && !clickedInsideLLM) {
-          console.log("[URLBar LLM] Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", relatedTarget?.tagName);
+          log("Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", relatedTarget?.tagName);
           deactivateLLMMode(urlbar, urlbarInput, true);
         } else if (clickedInsideLLM) {
-          console.log("[URLBar LLM] Blur ignored - clicked inside LLM container or link");
+          log("Blur ignored - clicked inside LLM container or link");
         }
-      }, 300);
+      }, LIMITS.BLUR_DELAY);
     });
 
     // Listen for urlbar panel closing (when urlbar is not "floating" anymore)
@@ -628,12 +467,12 @@ Do NOT explain. Just reply with one word.`
             // Panel is now hidden
             // Don't deactivate if we're clicking a link or in the conversation
             if (isClickingLink) {
-              console.log("[URLBar LLM] View hide ignored - clicking link");
+              log("View hide ignored - clicking link");
               return;
             }
             const llmContainer = document.querySelector(".llm-conversation-container");
             if (urlbarView.hidden && isLLMMode && !llmContainer?.matches(':hover')) {
-              console.log("[URLBar LLM] View hidden, deactivating");
+              log("View hidden, deactivating");
               deactivateLLMMode(urlbar, urlbarInput, true);
             }
           }
@@ -646,20 +485,27 @@ Do NOT explain. Just reply with one word.`
       });
     }
 
-    // Also listen for when urlbar closes (unfocused state)
-    urlbar.addEventListener("DOMAttrModified", (e) => {
-      if (e.attrName === "open" && !urlbar.hasAttribute("open") && isLLMMode) {
-        // Don't deactivate if clicking a link or inside conversation
-        if (isClickingLink) {
-          console.log("[URLBar LLM] Urlbar close ignored - clicking link");
-          return;
-        }
-        const llmContainer = document.querySelector(".llm-conversation-container");
-        if (!llmContainer?.matches(':hover')) {
-          console.log("[URLBar LLM] Urlbar closed, deactivating");
-          deactivateLLMMode(urlbar, urlbarInput, true);
+    // Watch for when urlbar "open" attribute is removed (unfocused state)
+    const urlbarOpenObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === "attributes" && mutation.attributeName === "open") {
+          if (!urlbar.hasAttribute("open") && isLLMMode) {
+            if (isClickingLink) {
+              log("Urlbar close ignored - clicking link");
+              return;
+            }
+            const llmContainer = document.querySelector(".llm-conversation-container");
+            if (!llmContainer?.matches(':hover')) {
+              log("Urlbar closed, deactivating");
+              deactivateLLMMode(urlbar, urlbarInput, true);
+            }
+          }
         }
       }
+    });
+    urlbarOpenObserver.observe(urlbar, {
+      attributes: true,
+      attributeFilter: ["open"]
     });
   }
 
@@ -828,7 +674,7 @@ Do NOT explain. Just reply with one word.`
       
       return table;
     } catch (e) {
-      console.warn('[URLBar LLM] Failed to parse table:', e);
+      logWarn('Failed to parse table:', e);
       return null;
     }
   }
@@ -872,8 +718,14 @@ Do NOT explain. Just reply with one word.`
     html = html.replace(/^(\d+)\. (.+)$/gm, '<li>$2</li>');
     html = html.replace(/(<li>[\s\S]*?<\/li>\n?)+/g, (match) => `<ul>${match}</ul>`);
     
-    // Links [text](url)
-    html = html.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // Links [text](url) - only allow http/https to prevent javascript: injection
+    html = html.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, (match, text, url) => {
+      const trimmedUrl = url.trim().toLowerCase();
+      if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://')) {
+        return `<a href="${url}" target="_blank" rel="noopener">${text}</a>`;
+      }
+      return text; // Strip unsafe links, keep text
+    });
     
     // Citation markers [1], [2], etc. - convert to styled spans with data attribute
     // Match [1], [2], [3] etc. but not [text](url) links which were already converted
@@ -900,23 +752,31 @@ Do NOT explain. Just reply with one word.`
    * Based on the approach used in Hana browser extension
    */
   
-  // Search results cache
+  // Search results cache (LRU-style with size limit)
   const searchCache = new Map();
-  const CACHE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+
+  function cacheSet(key, value) {
+    // Evict oldest entry if at capacity
+    if (searchCache.size >= LIMITS.MAX_CACHE_SIZE) {
+      const oldestKey = searchCache.keys().next().value;
+      searchCache.delete(oldestKey);
+    }
+    searchCache.set(key, value);
+  }
   
-  async function searchWeb(query, limit = 5) {
+  async function searchWeb(query, limit = LIMITS.MAX_SEARCH_RESULTS) {
     if (!isWebSearchEnabled()) {
       return null;
     }
 
     const startTime = Date.now();
-    console.log('[URLBar LLM] Searching for:', query);
+    log('Searching for:', query);
     
     // Check cache first
     const cacheKey = `${query}:${limit}`;
     const cached = searchCache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < CACHE_TIMEOUT) {
-      console.log('[URLBar LLM] Using cached results for:', query);
+    if (cached && Date.now() - cached.timestamp < LIMITS.CACHE_TTL) {
+      log('Using cached results for:', query);
       return cached.results;
     }
 
@@ -926,69 +786,67 @@ Do NOT explain. Just reply with one word.`
       
       if (results && results.length > 0) {
         // Cache results
-        searchCache.set(cacheKey, { results, timestamp: Date.now() });
-        console.log('[URLBar LLM] Search completed in', Date.now() - startTime, 'ms, found', results.length, 'results');
+        cacheSet(cacheKey, { results, timestamp: Date.now() });
+        log('Search completed in', Date.now() - startTime, 'ms, found', results.length, 'results');
         return results;
       }
       
       // Fallback to SearXNG if DDG fails
-      console.log('[URLBar LLM] DDG failed, trying SearXNG...');
+      log('DDG failed, trying SearXNG...');
       const searxResults = await searchSearXNG(query, limit);
       
       if (searxResults && searxResults.length > 0) {
-        searchCache.set(cacheKey, { results: searxResults, timestamp: Date.now() });
+        cacheSet(cacheKey, { results: searxResults, timestamp: Date.now() });
         return searxResults;
       }
       
-      console.warn('[URLBar LLM] All search methods failed');
+      logWarn('All search methods failed');
       return null;
 
     } catch (error) {
-      console.error('[URLBar LLM] Web search failed:', error);
+      logError('Web search failed:', error);
       return null;
     }
   }
   
-  // Keep the old function name for compatibility
-  const searchDuckDuckGo = searchWeb;
   
   /**
    * Direct DuckDuckGo search using XMLHttpRequest
    * XMLHttpRequest in chrome context bypasses CORS restrictions
    */
-  async function searchDuckDuckGoDirect(query, limit = 5) {
+  async function searchDuckDuckGoDirect(query, limit = LIMITS.MAX_SEARCH_RESULTS) {
     return new Promise((resolve) => {
       const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-      console.log('[URLBar LLM] Fetching DuckDuckGo:', url);
+      log('Fetching DuckDuckGo:', url);
       
       const xhr = new XMLHttpRequest();
-      xhr.timeout = 8000;
+      xhr.timeout = LIMITS.DDG_TIMEOUT;
       
       xhr.onload = function() {
         if (xhr.status === 200) {
           const html = xhr.responseText;
-          console.log('[URLBar LLM] Got DuckDuckGo HTML, length:', html.length);
+          log('Got DuckDuckGo HTML, length:', html.length);
           
           if (html && html.length > 1000 && html.includes('result')) {
             const results = parseDuckDuckGoHTML(html, limit);
             resolve(results.length > 0 ? results : null);
           } else {
-            console.warn('[URLBar LLM] DuckDuckGo returned invalid response');
+            logWarn('DuckDuckGo returned invalid response');
             resolve(null);
           }
         } else {
-          console.warn('[URLBar LLM] DuckDuckGo HTTP error:', xhr.status);
+          logWarn('DuckDuckGo HTTP error:', xhr.status);
           resolve(null);
         }
       };
       
       xhr.onerror = function() {
-        console.warn('[URLBar LLM] DuckDuckGo request error');
+        logWarn('DuckDuckGo request error');
         resolve(null);
       };
       
       xhr.ontimeout = function() {
-        console.warn('[URLBar LLM] DuckDuckGo request timeout');
+        logWarn('DuckDuckGo request timeout');
         resolve(null);
       };
       
@@ -1001,7 +859,7 @@ Do NOT explain. Just reply with one word.`
   /**
    * Fallback to SearXNG public instances
    */
-  async function searchSearXNG(query, limit = 5) {
+  async function searchSearXNG(query, limit = LIMITS.MAX_SEARCH_RESULTS) {
     const instances = [
       'https://searx.be',
       'https://search.ononoki.org',
@@ -1014,7 +872,7 @@ Do NOT explain. Just reply with one word.`
         
         const response = await Promise.race([
           fetch(searchUrl, { headers: { 'Accept': 'application/json' } }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), LIMITS.SEARXNG_TIMEOUT))
         ]);
         
         if (!response.ok) continue;
@@ -1040,12 +898,12 @@ Do NOT explain. Just reply with one word.`
           }).filter(r => r.url && r.title);
           
           if (results.length > 0) {
-            console.log('[URLBar LLM] SearXNG found', results.length, 'results from', instance);
+            log('SearXNG found', results.length, 'results from', instance);
             return results;
           }
         }
       } catch (e) {
-        console.warn('[URLBar LLM] SearXNG instance failed:', instance, e.message);
+        logWarn('SearXNG instance failed:', instance, e.message);
       }
     }
     
@@ -1075,7 +933,7 @@ Do NOT explain. Just reply with one word.`
       for (const selector of resultSelectors) {
         const elements = doc.querySelectorAll(selector);
         if (elements.length > 0) {
-          console.log('[URLBar LLM] Found', elements.length, 'results with selector:', selector);
+          log('Found', elements.length, 'results with selector:', selector);
           
           for (const el of elements) {
             if (results.length >= limit) break;
@@ -1092,7 +950,7 @@ Do NOT explain. Just reply with one word.`
       
       // Strategy 2: If no results, try finding links with uddg parameter
       if (results.length === 0) {
-        console.log('[URLBar LLM] Trying uddg link extraction...');
+        log('Trying uddg link extraction...');
         const uddgLinks = doc.querySelectorAll('a[href*="uddg="]');
         
         for (const link of uddgLinks) {
@@ -1120,11 +978,11 @@ Do NOT explain. Just reply with one word.`
       // Sort by relevance (longer snippets = more relevant)
       results.sort((a, b) => (b.snippet?.length || 0) - (a.snippet?.length || 0));
       
-      console.log('[URLBar LLM] Parsed', results.length, 'results from DuckDuckGo');
+      log('Parsed', results.length, 'results from DuckDuckGo');
       return results.slice(0, limit);
       
     } catch (error) {
-      console.error('[URLBar LLM] Failed to parse DuckDuckGo HTML:', error);
+      logError('Failed to parse DuckDuckGo HTML:', error);
       return [];
     }
   }
@@ -1239,7 +1097,7 @@ Do NOT explain. Just reply with one word.`
         }
       }
     } catch (e) {
-      console.warn('[URLBar LLM] Error cleaning URL:', e);
+      logWarn('Error cleaning URL:', e);
     }
     
     return url;
@@ -1252,29 +1110,27 @@ Do NOT explain. Just reply with one word.`
    * @param {number} timeout - Timeout in ms (default 3500)
    * @returns {Promise<string|null>} - Extracted text content or null
    */
-  async function fetchPageContent(url, maxLength = 3000, timeout = 3500) {
+  async function fetchPageContent(url, maxLength = LIMITS.MAX_PAGE_CONTENT_LENGTH, timeout = LIMITS.PAGE_FETCH_TIMEOUT) {
     try {
-      // Use CORS proxy with timeout
-      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-      
-      const response = await fetch(proxyUrl, {
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Firefox/120.0'
-        },
-        signal: controller.signal
+      // Use XMLHttpRequest in chrome context to bypass CORS (no third-party proxy needed)
+      const html = await new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.timeout = timeout;
+        xhr.onload = () => {
+          if (xhr.status === 200 && xhr.responseText && xhr.responseText.length >= 100) {
+            resolve(xhr.responseText);
+          } else {
+            resolve(null);
+          }
+        };
+        xhr.onerror = () => resolve(null);
+        xhr.ontimeout = () => resolve(null);
+        xhr.open('GET', url, true);
+        xhr.setRequestHeader('Accept', 'text/html,application/xhtml+xml');
+        xhr.send();
       });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        return null;
-      }
-      
-      const html = await response.text();
-      if (!html || html.length < 100) {
+
+      if (!html) {
         return null;
       }
       
@@ -1314,14 +1170,14 @@ Do NOT explain. Just reply with one word.`
               .trim();
             
             if (content.length > 100) {
-              console.log('[URLBar LLM] Readability extracted', content.length, 'chars from:', url);
+              log('Readability extracted', content.length, 'chars from:', url);
               return content.length > maxLength 
                 ? content.substring(0, maxLength) + '...'
                 : content;
             }
           }
         } catch (readabilityError) {
-          console.warn('[URLBar LLM] Readability parsing failed:', readabilityError.message);
+          logWarn('Readability parsing failed:', readabilityError.message);
         }
       }
       
@@ -1329,7 +1185,7 @@ Do NOT explain. Just reply with one word.`
       return extractMainContentSimple(doc, maxLength);
       
     } catch (error) {
-      console.warn('[URLBar LLM] Error fetching page:', error.message);
+      logWarn('Error fetching page:', error.message);
       return null;
     }
   }
@@ -1337,7 +1193,7 @@ Do NOT explain. Just reply with one word.`
   /**
    * Simple fallback content extraction when Readability is unavailable or fails
    */
-  function extractMainContentSimple(doc, maxLength = 2500) {
+  function extractMainContentSimple(doc, maxLength = LIMITS.MAX_SIMPLE_CONTENT_LENGTH) {
     try {
       // If doc is a string (HTML), parse it first
       if (typeof doc === 'string') {
@@ -1400,7 +1256,7 @@ Do NOT explain. Just reply with one word.`
       return content.length > 50 ? content : null;
       
     } catch (e) {
-      console.warn('[URLBar LLM] Simple extraction failed:', e.message);
+      logWarn('Simple extraction failed:', e.message);
       return null;
     }
   }
@@ -1410,13 +1266,13 @@ Do NOT explain. Just reply with one word.`
    * Fetch content from multiple search results in parallel
    * Optimized for speed - uses shorter timeouts and settles quickly
    */
-  async function fetchSearchResultsContent(searchResults, maxResults = 3) {
+  async function fetchSearchResultsContent(searchResults, maxResults = LIMITS.MAX_FETCH_RESULTS) {
     const startTime = Date.now();
-    console.log('[URLBar LLM] Fetching content from', Math.min(searchResults.length, maxResults), 'pages...');
+    log('Fetching content from', Math.min(searchResults.length, maxResults), 'pages...');
     
     // Use Promise.allSettled for faster results (don't wait for slow pages)
     const fetchPromises = searchResults.slice(0, maxResults).map(async (result, index) => {
-      const content = await fetchPageContent(result.url, 2000, 3000);
+      const content = await fetchPageContent(result.url);
       return {
         ...result,
         content: content || result.snippet,
@@ -1426,7 +1282,7 @@ Do NOT explain. Just reply with one word.`
     
     // Wait for all fetches with a shorter timeout (4 seconds max)
     const timeoutPromise = new Promise(resolve => 
-      setTimeout(() => resolve('timeout'), 4000)
+      setTimeout(() => resolve('timeout'), LIMITS.ALL_PAGES_FETCH_TIMEOUT)
     );
     
     try {
@@ -1436,7 +1292,7 @@ Do NOT explain. Just reply with one word.`
       ]);
       
       if (raceResult === 'timeout') {
-        console.warn('[URLBar LLM] Content fetch timed out after', Date.now() - startTime, 'ms, using snippets');
+        logWarn('Content fetch timed out after', Date.now() - startTime, 'ms, using snippets');
         return searchResults.slice(0, maxResults).map((r, i) => ({ ...r, content: r.snippet, index: i + 1 }));
       }
       
@@ -1448,10 +1304,10 @@ Do NOT explain. Just reply with one word.`
         return { ...searchResults[i], content: searchResults[i].snippet, index: i + 1 };
       });
       
-      console.log('[URLBar LLM] Content fetch completed in', Date.now() - startTime, 'ms');
+      log('Content fetch completed in', Date.now() - startTime, 'ms');
       return results;
     } catch (error) {
-      console.warn('[URLBar LLM] Error fetching content:', error);
+      logWarn('Error fetching content:', error);
       return searchResults.slice(0, maxResults).map((r, i) => ({ ...r, content: r.snippet, index: i + 1 }));
     }
   }
@@ -1583,7 +1439,7 @@ Provide a direct, informative answer with citations:`;
               triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
               inBackground: true
             });
-            console.log('[URLBar LLM] Opened source in background:', source.url);
+            log('Opened source in background:', source.url);
           } else if (topWindow.open) {
             topWindow.open(source.url, '_blank');
           }
@@ -1597,9 +1453,9 @@ Provide a direct, informative answer with citations:`;
               urlbarInput.focus();
             }
             isClickingLink = false;
-          }, 100);
+          }, LIMITS.FOCUS_RESTORE_DELAY);
         } catch (err) {
-          console.error('[URLBar LLM] Failed to open source:', err);
+          logError('Failed to open source:', err);
           isClickingLink = false;
         }
       });
@@ -1615,7 +1471,7 @@ Provide a direct, informative answer with citations:`;
       if (urlbarViewBodyInner) {
         urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
       }
-    }, 50);
+    }, LIMITS.SCROLL_DELAY);
   }
 
   function activateLLMMode(urlbar, urlbarInput, providerKey) {
@@ -1684,7 +1540,7 @@ Provide a direct, informative answer with citations:`;
     // Trigger Zen's native search mode animation (scale bounce + glow)
     triggerZenSearchModeAnimation(urlbar);
     
-    console.log(`[URLBar LLM] Activated with provider: ${providerKey}, existing messages: ${conversationHistory.length}`);
+    log(`Activated with provider: ${providerKey}, existing messages: ${conversationHistory.length}`);
   }
 
   /**
@@ -1704,7 +1560,7 @@ Provide a direct, informative answer with citations:`;
           { scale: [1, 0.98, 1] }, 
           { duration: 0.25 }
         );
-        console.log('[URLBar LLM] Urlbar pulse animation triggered');
+        log('Urlbar pulse animation triggered');
       }
       
       // 2. Glow effect on the pill
@@ -1713,18 +1569,18 @@ Provide a direct, informative answer with citations:`;
         // Trigger glow animation via CSS attribute
         labelBox.setAttribute("animate-glow", "true");
         
-        // Remove the attribute after the animation completes (1 second)
+        // Remove the attribute after the animation completes
         setTimeout(() => {
           requestAnimationFrame(() => {
             labelBox.removeAttribute("animate-glow");
           });
-        }, 1000);
+        }, LIMITS.ANIMATION_GLOW_DURATION);
         
-        console.log('[URLBar LLM] Pill glow animation triggered');
+        log('Pill glow animation triggered');
       }
       
     } catch (error) {
-      console.warn('[URLBar LLM] Failed to trigger animation:', error);
+      logWarn('Failed to trigger animation:', error);
     }
   }
 
@@ -1811,25 +1667,25 @@ Provide a direct, informative answer with citations:`;
           urlbarInput.dispatchEvent(inputEvent);
         }
       } catch (e) {
-        console.warn("[URLBar LLM] Cleanup failed:", e);
+        logWarn("Cleanup failed:", e);
         urlbarInput.value = "";
       }
     } else {
       urlbarInput.value = "";
     }
     
-    console.log("[URLBar LLM] Deactivated");
+    log("Deactivated");
   }
 
   function displayUserMessage(message) {
     // Get or create conversation container
     if (!conversationContainer || !conversationContainer.parentNode) {
-      console.log("[URLBar LLM] Creating/recreating conversation container");
+      log("Creating/recreating conversation container");
       conversationContainer = createConversationContainer();
     }
     
     if (!conversationContainer) {
-      console.error("[URLBar LLM] Failed to create conversation container");
+      logError("Failed to create conversation container");
       return;
     }
     
@@ -1840,7 +1696,7 @@ Provide a direct, informative answer with citations:`;
     
     conversationContainer.appendChild(messageDiv);
     
-    console.log("[URLBar LLM] User message added. Total children:", conversationContainer.children.length);
+    log("User message added. Total children:", conversationContainer.children.length);
     
     // Scroll to bottom
     setTimeout(() => {
@@ -1848,14 +1704,14 @@ Provide a direct, informative answer with citations:`;
       if (urlbarViewBodyInner) {
         urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
       }
-    }, 10);
+    }, LIMITS.SCROLL_DELAY_MESSAGE);
   }
 
   function createConversationContainer() {
     // Get urlbar view container
     const urlbarView = document.querySelector(".urlbarView");
     if (!urlbarView) {
-      console.error("[URLBar LLM] Could not find urlbarView");
+      logError("Could not find urlbarView");
       return null;
     }
 
@@ -1865,21 +1721,21 @@ Provide a direct, informative answer with citations:`;
       resultsContainer = urlbarView.querySelector(".urlbarView-body");
     }
     if (!resultsContainer) {
-      console.error("[URLBar LLM] Could not find results container");
+      logError("Could not find results container");
       return null;
     }
     
     // Check if container already exists
     let container = resultsContainer.querySelector(".llm-conversation-container");
     if (container) {
-      console.log("[URLBar LLM] Reusing existing conversation container");
+      log("Reusing existing conversation container");
       return container;
     }
     
     // Create conversation container
     container = document.createElement("div");
     container.className = "llm-conversation-container";
-    console.log("[URLBar LLM] Creating new conversation container");
+    log("Creating new conversation container");
     
     // Stop events from propagating to prevent urlbar from closing
     // For links, we need special handling to allow them to work
@@ -1888,7 +1744,7 @@ Provide a direct, informative answer with citations:`;
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
       
       if (linkElement) {
-        console.log("[URLBar LLM] Container mousedown - link detected, setting flag");
+        log("Container mousedown - link detected, setting flag");
         // Set flag immediately to prevent blur from deactivating
         isClickingLink = true;
         // Don't stop propagation for links
@@ -1896,7 +1752,7 @@ Provide a direct, informative answer with citations:`;
       }
       
       e.stopPropagation();
-      console.log("[URLBar LLM] Container mousedown blocked, target:", target.tagName);
+      log("Container mousedown blocked, target:", target.tagName);
     }, false); // Changed to bubble phase
     
     container.addEventListener("mouseup", (e) => {
@@ -1904,13 +1760,13 @@ Provide a direct, informative answer with citations:`;
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
       
       if (linkElement) {
-        console.log("[URLBar LLM] Container mouseup - link detected, not blocking");
+        log("Container mouseup - link detected, not blocking");
         // Don't stop propagation for links
         return;
       }
       
       e.stopPropagation();
-      console.log("[URLBar LLM] Container mouseup blocked, target:", target.tagName);
+      log("Container mouseup blocked, target:", target.tagName);
     }, false); // Changed to bubble phase
     
     container.addEventListener("click", (e) => {
@@ -1918,13 +1774,13 @@ Provide a direct, informative answer with citations:`;
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
       
       if (linkElement) {
-        console.log("[URLBar LLM] Container click - link detected, not blocking");
+        log("Container click - link detected, not blocking");
         // Don't stop propagation for links
         return;
       }
       
       e.stopPropagation();
-      console.log("[URLBar LLM] Container click blocked, target:", target.tagName);
+      log("Container click blocked, target:", target.tagName);
     }, false); // Changed to bubble phase
     
     resultsContainer.appendChild(container);
@@ -1941,12 +1797,12 @@ Provide a direct, informative answer with citations:`;
   function createStreamingResultRow() {
     // Get or create conversation container
     if (!conversationContainer || !conversationContainer.parentNode) {
-      console.log("[URLBar LLM] Creating/recreating conversation container for assistant");
+      log("Creating/recreating conversation container for assistant");
       conversationContainer = createConversationContainer();
     }
     
     if (!conversationContainer) {
-      console.error("[URLBar LLM] Failed to create conversation container for assistant");
+      logError("Failed to create conversation container for assistant");
       return null;
     }
 
@@ -1985,7 +1841,7 @@ Provide a direct, informative answer with citations:`;
                 triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
                 inBackground: true
               });
-              console.log('[URLBar LLM] Opened source', sourceIndex, 'in background:', source.url);
+              log('Opened source', sourceIndex, 'in background:', source.url);
             }
             
             // Highlight the corresponding pill briefly
@@ -1995,7 +1851,7 @@ Provide a direct, informative answer with citations:`;
               const pill = pills[sourceIndex - 1];
               if (pill) {
                 pill.classList.add('llm-source-pill-highlight');
-                setTimeout(() => pill.classList.remove('llm-source-pill-highlight'), 1000);
+                setTimeout(() => pill.classList.remove('llm-source-pill-highlight'), LIMITS.ANIMATION_GLOW_DURATION);
               }
             }
             
@@ -2007,9 +1863,9 @@ Provide a direct, informative answer with citations:`;
                 urlbarInput.focus();
               }
               isClickingLink = false;
-            }, 100);
+            }, LIMITS.FOCUS_RESTORE_DELAY);
           } catch (err) {
-            console.error('[URLBar LLM] Failed to open citation source:', err);
+            logError('Failed to open citation source:', err);
             isClickingLink = false;
           }
         }
@@ -2017,7 +1873,7 @@ Provide a direct, informative answer with citations:`;
       }
       
       if (link && link.href) {
-        console.log(`[URLBar LLM] Link ${eventType}:`, link.href);
+        log(`Link ${eventType}:`, link.href);
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
@@ -2033,10 +1889,10 @@ Provide a direct, informative answer with citations:`;
                 triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
                 inBackground: true
               });
-              console.log('[URLBar LLM] Successfully opened link in background');
+              log('Successfully opened link in background');
             } else if (topWindow.open) {
               topWindow.open(link.href, '_blank');
-              console.log('[URLBar LLM] Opened using window.open');
+              log('Opened using window.open');
             }
             
             // Keep urlbar open and focused
@@ -2049,10 +1905,10 @@ Provide a direct, informative answer with citations:`;
                 urlbarInput.focus();
               }
               isClickingLink = false;
-              console.log('[URLBar LLM] Refocused urlbar');
-            }, 100);
+              log('Refocused urlbar');
+            }, LIMITS.FOCUS_RESTORE_DELAY);
           } catch (err) {
-            console.error('[URLBar LLM] Failed to open link:', err);
+            logError('Failed to open link:', err);
             isClickingLink = false;
           }
         }
@@ -2067,7 +1923,7 @@ Provide a direct, informative answer with citations:`;
     messageDiv.appendChild(contentDiv);
     conversationContainer.appendChild(messageDiv);
     
-    console.log("[URLBar LLM] Assistant message added. Total children:", conversationContainer.children.length);
+    log("Assistant message added. Total children:", conversationContainer.children.length);
     
     return { row: messageDiv, title: contentDiv };
   }
@@ -2078,7 +1934,7 @@ Provide a direct, informative answer with citations:`;
     }
 
     // Check API key for non-local providers
-    if (currentProvider.apiKey === "" && currentProvider.name !== "Ollama (Local)") {
+    if (currentProvider.apiKey !== null && currentProvider.apiKey === "") {
       // Try to load from preferences first
       const providerKey = urlbar.getAttribute("llm-provider");
       const prefKey = `extension.urlbar-llm.${providerKey}-api-key`;
@@ -2101,7 +1957,7 @@ Provide a direct, informative answer with citations:`;
     // Create streaming result row
     const result = createStreamingResultRow();
     if (!result) {
-      console.error("[URLBar LLM] Failed to create result row");
+      logError("Failed to create result row");
       return;
     }
 
@@ -2140,9 +1996,9 @@ Provide a direct, informative answer with citations:`;
         // Show searching status with spinner
         titleElement.innerHTML = '<span class="llm-search-spinner"></span> Searching...';
         
-        console.log('[URLBar LLM] Web search triggered for query:', query);
+        log('Web search triggered for query:', query);
         const startTime = Date.now();
-        const searchResults = await searchDuckDuckGo(query);
+        const searchResults = await searchWeb(query);
         
         if (searchResults && searchResults.length > 0) {
           // Update status - fetching content
@@ -2156,12 +2012,12 @@ Provide a direct, informative answer with citations:`;
           currentSearchSources = resultsWithContent;
           
           searchContext = formatSearchResultsForLLM(resultsWithContent, query);
-          console.log('[URLBar LLM] Web search completed in', Date.now() - startTime, 'ms total');
+          log('Web search completed in', Date.now() - startTime, 'ms total');
         } else {
-          console.log('[URLBar LLM] Web search returned no results');
+          log('Web search returned no results');
         }
       } else if (!supportsWebSearch && isWebSearchEnabled()) {
-        console.log('[URLBar LLM] Web search not supported for provider:', providerKey);
+        log('Web search not supported for provider:', providerKey);
       } else {
         // Clear sources if no search was performed
         currentSearchSources = [];
@@ -2183,18 +2039,10 @@ Provide a direct, informative answer with citations:`;
           },
           conversationHistory[lastUserMessageIndex]
         ];
-        console.log('[URLBar LLM] Added web search context to messages');
+        log('Added web search context to messages');
       }
       
-      let accumulatedText = "";
-      
-      if (currentProvider.name === "Ollama") {
-        // Ollama uses native /api/chat endpoint
-        await streamOllamaResponse(messagesToSend, titleElement, abortController.signal);
-      } else {
-        // Standard OpenAI-compatible API (works for OpenAI, Mistral, Gemini)
-        await streamOpenAIResponse(messagesToSend, titleElement, abortController.signal);
-      }
+      await streamResponse(messagesToSend, titleElement, abortController.signal);
       
       // Add assistant's response to conversation history
       conversationHistory.push({
@@ -2202,7 +2050,7 @@ Provide a direct, informative answer with citations:`;
         content: currentAssistantMessage
       });
       
-      console.log("[URLBar LLM] Conversation now has", conversationHistory.length, "messages");
+      log("Conversation now has", conversationHistory.length, "messages");
       
       // Display source pills if we have search sources
       if (currentSearchSources && currentSearchSources.length > 0) {
@@ -2214,33 +2062,50 @@ Provide a direct, informative answer with citations:`;
       if (error.name === "AbortError") {
         titleElement.textContent = "Request cancelled";
       } else {
-        console.error("[URLBar LLM] Error:", error);
-        titleElement.textContent = `Error: ${error.message}`;
+        logError("Error:", error);
+        // Show user-friendly message, keep details in console only
+        const isNetworkError = error.message?.includes("fetch") || error.message?.includes("network");
+        const isApiError = error.message?.includes("API error");
+        if (isNetworkError) {
+          titleElement.textContent = "Connection error. Please check your network and try again.";
+        } else if (isApiError) {
+          titleElement.textContent = "API request failed. Please check your API key and try again.";
+        } else {
+          titleElement.textContent = "Something went wrong. Please try again.";
+        }
       }
       urlbar.removeAttribute("is-llm-thinking");
     }
   }
 
-  async function streamOpenAIResponse(messages, titleElement, signal) {
-    // Add /chat/completions if not already in the URL
-    const url = currentProvider.baseUrl.endsWith('/chat/completions') 
-      ? currentProvider.baseUrl 
-      : `${currentProvider.baseUrl}/chat/completions`;
-    
-    console.log(`[URLBar LLM] Request URL: ${url}`);
-    console.log(`[URLBar LLM] Model: ${currentProvider.model}`);
-    console.log(`[URLBar LLM] Provider: ${currentProvider.name}`);
-    console.log(`[URLBar LLM] Conversation history: ${messages.length} messages`);
-    
+  /**
+   * Unified streaming response handler for all providers.
+   * Supports both OpenAI-compatible SSE format and Ollama JSON format.
+   * Uses debounced rendering to avoid O(n^2) re-parsing on every token.
+   */
+  async function streamResponse(messages, titleElement, signal) {
+    const isOllama = currentProvider.name === "Ollama";
+
+    // Build request URL and headers
+    const url = isOllama
+      ? currentProvider.baseUrl
+      : (currentProvider.baseUrl.endsWith('/chat/completions')
+          ? currentProvider.baseUrl
+          : `${currentProvider.baseUrl}/chat/completions`);
+
+    const headers = { "Content-Type": "application/json" };
+    if (!isOllama) {
+      headers["Authorization"] = `Bearer ${currentProvider.apiKey}`;
+    }
+
+    log(`Streaming request — URL: ${url}, Model: ${currentProvider.model}, Provider: ${currentProvider.name}, Messages: ${messages.length}`);
+
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${currentProvider.apiKey}`
-      },
+      headers,
       body: JSON.stringify({
         model: currentProvider.model,
-        messages: messages, // Use full conversation history
+        messages,
         stream: true
       }),
       signal
@@ -2248,7 +2113,7 @@ Provide a direct, informative answer with citations:`;
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
-      console.error(`[URLBar LLM] API error response:`, errorText);
+      logError(`API error response:`, errorText);
       throw new Error(`API error: ${response.status} ${response.statusText}`);
     }
 
@@ -2256,6 +2121,32 @@ Provide a direct, informative answer with citations:`;
     const decoder = new TextDecoder();
     let buffer = "";
     let accumulatedText = "";
+
+    // Debounced rendering: batch rapid token updates into a single render pass
+    let renderPending = false;
+    const scheduleRender = () => {
+      if (renderPending) return;
+      renderPending = true;
+      setTimeout(() => {
+        renderPending = false;
+        renderMarkdownToElement(accumulatedText, titleElement);
+        const scrollContainer = document.querySelector(".urlbarView-body-inner");
+        if (scrollContainer) {
+          scrollContainer.scrollTop = scrollContainer.scrollHeight;
+        }
+      }, LIMITS.RENDER_DEBOUNCE);
+    };
+
+    /**
+     * Extract delta text from a parsed JSON chunk.
+     * Returns the text content or null, and whether the stream is done.
+     */
+    const extractDelta = (json) => {
+      if (isOllama) {
+        return { text: json.message?.content || null, done: !!json.done };
+      }
+      return { text: json.choices?.[0]?.delta?.content || null, done: false };
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -2266,160 +2157,47 @@ Provide a direct, informative answer with citations:`;
       buffer = lines.pop(); // Keep incomplete line in buffer
 
       for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          const data = line.slice(6);
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        // OpenAI SSE format: lines starting with "data: "
+        if (trimmed.startsWith("data: ")) {
+          const data = trimmed.slice(6);
           if (data === "[DONE]") {
+            // Final render with full text
+            renderMarkdownToElement(accumulatedText, titleElement);
             return;
           }
           try {
-            const json = JSON.parse(data);
-            const delta = json.choices?.[0]?.delta?.content;
-            if (delta) {
-              accumulatedText += delta;
-              currentAssistantMessage = accumulatedText; // Track for conversation history
-              renderMarkdownToElement(accumulatedText, titleElement);
-              // Auto-scroll to bottom
-              const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
-              if (urlbarViewBodyInner) {
-                urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
-              }
+            const { text } = extractDelta(JSON.parse(data));
+            if (text) {
+              accumulatedText += text;
+              currentAssistantMessage = accumulatedText;
+              scheduleRender();
             }
-          } catch (e) {
-            // Ignore parse errors
-          }
+          } catch (e) { /* ignore parse errors */ }
         }
-      }
-    }
-  }
-
-  async function streamOllamaResponse(messages, titleElement, signal) {
-    // Use native Ollama /api/chat endpoint with messages format
-    console.log(`[URLBar LLM] Ollama request URL: ${currentProvider.baseUrl}`);
-    console.log(`[URLBar LLM] Ollama model: ${currentProvider.model}`);
-    console.log(`[URLBar LLM] Ollama messages: ${messages.length}`);
-    
-    const response = await fetch(currentProvider.baseUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: currentProvider.model,
-        messages: messages,
-        stream: true
-      }),
-      signal
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      console.error(`[URLBar LLM] Ollama API error response:`, errorText);
-      throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let accumulatedText = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        if (line.trim()) {
+        // Ollama JSON format: each line is a complete JSON object
+        else if (isOllama) {
           try {
-            const json = JSON.parse(line);
-            // Native /api/chat returns message.content
-            const delta = json.message?.content;
-            if (delta) {
-              accumulatedText += delta;
-              currentAssistantMessage = accumulatedText; // Track for conversation history
-              renderMarkdownToElement(accumulatedText, titleElement);
-              // Auto-scroll to bottom
-              const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
-              if (urlbarViewBodyInner) {
-                urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
-              }
+            const json = JSON.parse(trimmed);
+            const { text, done: streamDone } = extractDelta(json);
+            if (text) {
+              accumulatedText += text;
+              currentAssistantMessage = accumulatedText;
+              scheduleRender();
             }
-            if (json.done) {
+            if (streamDone) {
+              renderMarkdownToElement(accumulatedText, titleElement);
               return;
             }
-          } catch (e) {
-            // Ignore parse errors
-          }
+          } catch (e) { /* ignore parse errors */ }
         }
       }
     }
-  }
 
-  async function streamGeminiResponse(query, titleElement, signal) {
-    const url = `${currentProvider.baseUrl}/models/${currentProvider.model}:streamGenerateContent?key=${currentProvider.apiKey}`;
-    
-    console.log(`[URLBar LLM] Gemini URL: ${url.replace(currentProvider.apiKey, 'API_KEY')}`);
-    
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{
-            text: query
-          }]
-        }]
-      }),
-      signal
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      console.error(`[URLBar LLM] Gemini error response:`, errorText);
-      throw new Error(`Gemini API error: ${response.status} ${response.statusText}`);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let accumulatedText = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-
-      for (const line of lines) {
-        if (line.trim()) {
-          try {
-            const json = JSON.parse(line);
-            const candidates = json.candidates || [];
-            for (const candidate of candidates) {
-              const content = candidate.content;
-              if (content && content.parts) {
-                for (const part of content.parts) {
-                  if (part.text) {
-                    accumulatedText += part.text;
-                    renderMarkdownToElement(accumulatedText, titleElement);
-                    titleElement.scrollTop = titleElement.scrollHeight;
-                  }
-                }
-              }
-            }
-          } catch (e) {
-            // Ignore parse errors during streaming
-            console.debug("[URLBar LLM] Gemini parse error:", e);
-          }
-        }
-      }
-    }
+    // Ensure final state is rendered
+    renderMarkdownToElement(accumulatedText, titleElement);
   }
 
   // Initialize when DOM is ready (only once)
