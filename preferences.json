@@ -138,6 +138,22 @@
     ]
   },
   {
+    "property": "extension.urlbar-llm.ollama-web-search-api-key",
+    "label": "Ollama Web Search API Key",
+    "type": "string",
+    "placeholder": "Enter your Ollama API key for web search",
+    "defaultValue": "",
+    "description": "API key from ollama.com/settings/keys. Enables high-quality web search and page fetching via Ollama's cloud API. Works with all providers.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
     "property": "extension.urlbar-llm.ollama-model",
     "label": "Ollama Model",
     "type": "string",
@@ -163,7 +179,7 @@
     "label": "Enable Web Search",
     "type": "checkbox",
     "defaultValue": true,
-    "description": "Automatically search the web for current information when needed. Works with Mistral and OpenAI providers.",
+    "description": "Automatically search the web for current information when needed. Works with all providers (Mistral, OpenAI, Ollama).",
     "conditions": [
       {
         "if": {

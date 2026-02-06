@@ -23,7 +23,8 @@
     BLUR_DELAY: 300,                  // ms before blur deactivates LLM mode
     FOCUS_RESTORE_DELAY: 100,         // ms before restoring focus after link click
     DDG_TIMEOUT: 8000,                // DuckDuckGo request timeout (ms)
-    SEARXNG_TIMEOUT: 5000,            // SearXNG request timeout (ms)
+    OLLAMA_WEBSEARCH_TIMEOUT: 10000,  // Ollama web search API timeout (ms)
+    OLLAMA_WEBFETCH_TIMEOUT: 8000,    // Ollama web fetch API timeout (ms)
     PAGE_FETCH_TIMEOUT: 3500,         // Individual page content fetch timeout (ms)
     ALL_PAGES_FETCH_TIMEOUT: 4000,    // Total timeout for all page fetches (ms)
     MAX_PAGE_CONTENT_LENGTH: 3000,    // Max chars extracted per page
@@ -35,6 +36,10 @@
     SCROLL_DELAY: 50,                 // ms delay before scrolling to pills
     SCROLL_DELAY_MESSAGE: 10,         // ms delay before scrolling after user message
   };
+
+  // Ollama Web Search/Fetch API endpoints
+  const OLLAMA_WEB_SEARCH_URL = "https://ollama.com/api/web_search";
+  const OLLAMA_WEB_FETCH_URL = "https://ollama.com/api/web_fetch";
 
   // Configuration
   const CONFIG = {
@@ -53,10 +58,13 @@
       },
       ollama: {
         name: "Ollama",
-        apiKey: null, // Not needed for local
+        apiKey: null, // Not needed for local LLM
         baseUrl: "http://localhost:11434/api/chat",
         model: "mistral"
       }
+    },
+    ollamaWebSearch: {
+      apiKey: "" // Ollama API key for web search (https://ollama.com/settings/keys)
     },
     defaultProvider: "ollama"
   };
@@ -284,6 +292,12 @@ Do NOT explain. Just reply with one word.`
     CONFIG.providers.ollama.baseUrl = getPref(
       "extension.urlbar-llm.ollama-base-url",
       "http://localhost:11434/api/chat"
+    );
+
+    // Load Ollama web search API key
+    CONFIG.ollamaWebSearch.apiKey = getPref(
+      "extension.urlbar-llm.ollama-web-search-api-key",
+      ""
     );
   }
 
@@ -781,6 +795,17 @@ Do NOT explain. Just reply with one word.`
     }
 
     try {
+      // Try Ollama Web Search API first (if API key is configured)
+      if (hasOllamaWebSearchKey()) {
+        const ollamaResults = await searchOllamaWeb(query, limit);
+        if (ollamaResults && ollamaResults.length > 0) {
+          cacheSet(cacheKey, { results: ollamaResults, timestamp: Date.now() });
+          log('Ollama web search completed in', Date.now() - startTime, 'ms, found', ollamaResults.length, 'results');
+          return ollamaResults;
+        }
+        log('Ollama web search failed, falling back to DuckDuckGo...');
+      }
+
       // Try DuckDuckGo HTML search (direct fetch - works in chrome context)
       const results = await searchDuckDuckGoDirect(query, limit);
       
@@ -789,15 +814,6 @@ Do NOT explain. Just reply with one word.`
         cacheSet(cacheKey, { results, timestamp: Date.now() });
         log('Search completed in', Date.now() - startTime, 'ms, found', results.length, 'results');
         return results;
-      }
-      
-      // Fallback to SearXNG if DDG fails
-      log('DDG failed, trying SearXNG...');
-      const searxResults = await searchSearXNG(query, limit);
-      
-      if (searxResults && searxResults.length > 0) {
-        cacheSet(cacheKey, { results: searxResults, timestamp: Date.now() });
-        return searxResults;
       }
       
       logWarn('All search methods failed');
@@ -857,57 +873,140 @@ Do NOT explain. Just reply with one word.`
   }
   
   /**
-   * Fallback to SearXNG public instances
+   * Helper to check if Ollama web search API key is configured
    */
-  async function searchSearXNG(query, limit = LIMITS.MAX_SEARCH_RESULTS) {
-    const instances = [
-      'https://searx.be',
-      'https://search.ononoki.org',
-      'https://searx.tiekoetter.com'
-    ];
-    
-    for (const instance of instances) {
-      try {
-        const searchUrl = `${instance}/search?q=${encodeURIComponent(query)}&format=json&categories=general`;
-        
-        const response = await Promise.race([
-          fetch(searchUrl, { headers: { 'Accept': 'application/json' } }),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), LIMITS.SEARXNG_TIMEOUT))
-        ]);
-        
-        if (!response.ok) continue;
-        
-        const data = await response.json();
-        
-        if (data.results && data.results.length > 0) {
-          const results = data.results.slice(0, limit).map((r, i) => {
-            let source = '';
-            try {
-              source = new URL(r.url).hostname.replace('www.', '');
-            } catch (e) {
-              source = r.engine || 'unknown';
-            }
-            
-            return {
-              title: r.title || '',
-              url: r.url || '',
-              snippet: r.content || r.title || '',
-              source: source,
-              index: i + 1
-            };
-          }).filter(r => r.url && r.title);
-          
-          if (results.length > 0) {
-            log('SearXNG found', results.length, 'results from', instance);
-            return results;
-          }
-        }
-      } catch (e) {
-        logWarn('SearXNG instance failed:', instance, e.message);
-      }
+  function hasOllamaWebSearchKey() {
+    return CONFIG.ollamaWebSearch.apiKey && CONFIG.ollamaWebSearch.apiKey.trim().length > 0;
+  }
+
+  /**
+   * Search using Ollama's Web Search API
+   * Requires an Ollama API key from https://ollama.com/settings/keys
+   * Returns results in the same format as other search functions
+   */
+  async function searchOllamaWeb(query, limit = LIMITS.MAX_SEARCH_RESULTS) {
+    if (!hasOllamaWebSearchKey()) {
+      log('No Ollama web search API key configured');
+      return null;
     }
-    
-    return null;
+
+    try {
+      log('Searching with Ollama Web Search API:', query);
+
+      const response = await Promise.race([
+        fetch(OLLAMA_WEB_SEARCH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${CONFIG.ollamaWebSearch.apiKey}`
+          },
+          body: JSON.stringify({
+            query: query,
+            max_results: Math.min(limit, 10) // Ollama API max is 10
+          })
+        }),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Ollama web search timeout')), LIMITS.OLLAMA_WEBSEARCH_TIMEOUT)
+        )
+      ]);
+
+      if (!response.ok) {
+        logWarn('Ollama web search HTTP error:', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data.results && data.results.length > 0) {
+        const results = data.results.slice(0, limit).map((r, i) => {
+          let source = '';
+          try {
+            source = new URL(r.url).hostname.replace('www.', '');
+          } catch (e) {
+            source = 'unknown';
+          }
+
+          return {
+            title: r.title || '',
+            url: r.url || '',
+            snippet: r.content || r.title || '',
+            source: source,
+            index: i + 1
+          };
+        }).filter(r => r.url && r.title);
+
+        if (results.length > 0) {
+          log('Ollama web search found', results.length, 'results');
+          return results;
+        }
+      }
+
+      logWarn('Ollama web search returned no results');
+      return null;
+
+    } catch (error) {
+      logWarn('Ollama web search failed:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Fetch page content using Ollama's Web Fetch API
+   * Returns clean page content without needing local HTML parsing
+   * Requires an Ollama API key
+   */
+  async function fetchPageContentOllama(url) {
+    if (!hasOllamaWebSearchKey()) {
+      return null;
+    }
+
+    try {
+      const response = await Promise.race([
+        fetch(OLLAMA_WEB_FETCH_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${CONFIG.ollamaWebSearch.apiKey}`
+          },
+          body: JSON.stringify({ url: url })
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Ollama web fetch timeout')), LIMITS.OLLAMA_WEBFETCH_TIMEOUT)
+        )
+      ]);
+
+      if (!response.ok) {
+        logWarn('Ollama web fetch HTTP error:', response.status, 'for', url);
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data.content && data.content.length > 50) {
+        let content = '';
+        if (data.title) {
+          content += `# ${data.title}\n\n`;
+        }
+        content += data.content;
+
+        // Clean up and truncate
+        content = content
+          .replace(/\n{3,}/g, '\n\n')
+          .replace(/[ \t]+/g, ' ')
+          .trim();
+
+        log('Ollama web fetch extracted', content.length, 'chars from:', url);
+        return content.length > LIMITS.MAX_PAGE_CONTENT_LENGTH
+          ? content.substring(0, LIMITS.MAX_PAGE_CONTENT_LENGTH) + '...'
+          : content;
+      }
+
+      return null;
+
+    } catch (error) {
+      logWarn('Ollama web fetch failed for', url, ':', error.message);
+      return null;
+    }
   }
 
   /**
@@ -1268,11 +1367,20 @@ Do NOT explain. Just reply with one word.`
    */
   async function fetchSearchResultsContent(searchResults, maxResults = LIMITS.MAX_FETCH_RESULTS) {
     const startTime = Date.now();
-    log('Fetching content from', Math.min(searchResults.length, maxResults), 'pages...');
+    const useOllamaFetch = hasOllamaWebSearchKey();
+    log('Fetching content from', Math.min(searchResults.length, maxResults), 'pages...',
+        useOllamaFetch ? '(using Ollama web fetch)' : '(using local fetch)');
     
     // Use Promise.allSettled for faster results (don't wait for slow pages)
     const fetchPromises = searchResults.slice(0, maxResults).map(async (result, index) => {
-      const content = await fetchPageContent(result.url);
+      // Try Ollama web fetch first, fall back to local fetch
+      let content = null;
+      if (useOllamaFetch) {
+        content = await fetchPageContentOllama(result.url);
+      }
+      if (!content) {
+        content = await fetchPageContent(result.url);
+      }
       return {
         ...result,
         content: content || result.snippet,
@@ -1280,9 +1388,10 @@ Do NOT explain. Just reply with one word.`
       };
     });
     
-    // Wait for all fetches with a shorter timeout (4 seconds max)
+    // Wait for all fetches with a timeout (longer when using Ollama API)
+    const fetchTimeout = useOllamaFetch ? LIMITS.OLLAMA_WEBFETCH_TIMEOUT : LIMITS.ALL_PAGES_FETCH_TIMEOUT;
     const timeoutPromise = new Promise(resolve => 
-      setTimeout(() => resolve('timeout'), LIMITS.ALL_PAGES_FETCH_TIMEOUT)
+      setTimeout(() => resolve('timeout'), fetchTimeout)
     );
     
     try {
@@ -1981,7 +2090,7 @@ Provide a direct, informative answer with citations:`;
       let searchContext = null;
       let searchResultsForDisplay = null;
       const providerKey = urlbar.getAttribute("llm-provider");
-      const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral';
+      const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral' || providerKey === 'ollama';
       
       // Ask the LLM itself whether the query is within its knowledge scope
       let needsSearch = false;
