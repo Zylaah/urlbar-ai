@@ -331,6 +331,97 @@
     return false;
   }
 
+  /**
+   * LLM-based web search classification
+   * Asks the model itself whether the question is within its knowledge scope.
+   * If not, triggers a web search. This replaces pure heuristic detection.
+   */
+  async function queryNeedsWebSearchLLM(query, isFollowUp = false, signal = null) {
+    // Never search on follow-ups (the model already has context)
+    if (isFollowUp) {
+      console.log('[URLBar LLM] No search: follow-up message');
+      return false;
+    }
+
+    // Ask the LLM to classify the query
+    console.log('[URLBar LLM] Asking model to classify query for web search need:', query);
+
+    const classificationPrompt = [
+      {
+        role: "system",
+        content: `You are a classifier. The user will give you a question or request. You must decide whether you can answer it confidently and accurately from your own training knowledge, or whether it requires up-to-date or real-time information from the web (e.g. current events, live prices, recent news, very specific/niche facts you're unsure about, information after your knowledge cutoff).
+
+Reply with ONLY one word:
+- "SEARCH" if you need web search to answer accurately
+- "ANSWER" if you can answer confidently from your own knowledge
+
+Do NOT explain. Just reply with one word.`
+      },
+      {
+        role: "user",
+        content: query
+      }
+    ];
+
+    try {
+      let responseText = "";
+
+      if (currentProvider.name === "Ollama") {
+        // Ollama native API (non-streaming)
+        const response = await fetch(currentProvider.baseUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: currentProvider.model,
+            messages: classificationPrompt,
+            stream: false
+          }),
+          signal
+        });
+        if (!response.ok) throw new Error(`Ollama classify error: ${response.status}`);
+        const json = await response.json();
+        responseText = (json.message?.content || "").trim().toUpperCase();
+      } else {
+        // OpenAI-compatible API (non-streaming)
+        const url = currentProvider.baseUrl.endsWith('/chat/completions')
+          ? currentProvider.baseUrl
+          : `${currentProvider.baseUrl}/chat/completions`;
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${currentProvider.apiKey}`
+          },
+          body: JSON.stringify({
+            model: currentProvider.model,
+            messages: classificationPrompt,
+            stream: false,
+            max_tokens: 5,
+            temperature: 0
+          }),
+          signal
+        });
+        if (!response.ok) throw new Error(`Classify API error: ${response.status}`);
+        const json = await response.json();
+        responseText = (json.choices?.[0]?.message?.content || "").trim().toUpperCase();
+      }
+
+      console.log('[URLBar LLM] Model classification response:', responseText);
+
+      // The model replied SEARCH or ANSWER
+      const needsSearch = responseText.includes("SEARCH");
+      console.log('[URLBar LLM] Model decided:', needsSearch ? 'needs web search' : 'can answer from knowledge');
+      return needsSearch;
+
+    } catch (err) {
+      // If classification fails (timeout, network error, etc.), fall back to no search
+      // so the model still answers from its own knowledge
+      console.warn('[URLBar LLM] Classification request failed, defaulting to no search:', err.message);
+      return false;
+    }
+  }
+
   // Load API keys and config from preferences
   function loadConfig() {
     // Check if enabled
@@ -2030,18 +2121,19 @@ Provide a direct, informative answer with citations:`;
     abortController = new AbortController();
 
     try {
-      // Perform web search if enabled and query needs it
+      // Perform web search if enabled and the model decides it needs it
       let searchContext = null;
       let searchResultsForDisplay = null;
       const providerKey = urlbar.getAttribute("llm-provider");
       const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral';
       
-      // Use fast heuristic instead of LLM classification for speed
+      // Ask the LLM itself whether the query is within its knowledge scope
       let needsSearch = false;
       if (isWebSearchEnabled() && supportsWebSearch) {
-        // Pass isFollowUp=true if there's already a conversation (more than just the current user message)
         const isFollowUp = conversationHistory.length > 1;
-        needsSearch = queryNeedsWebSearchFast(query, isFollowUp);
+        // Show evaluating status while the model classifies
+        titleElement.innerHTML = '<span class="llm-search-spinner"></span> Evaluating...';
+        needsSearch = await queryNeedsWebSearchLLM(query, isFollowUp, abortController.signal);
       }
       
       if (needsSearch) {
