@@ -366,8 +366,12 @@
 .llm-message {
   padding: 8px 12px;
   border-radius: 8px;
+  white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  word-break: break-word;
+  min-width: 0;
+  max-width: 100%;
   user-select: text !important;
   pointer-events: auto !important;
 }
