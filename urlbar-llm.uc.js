@@ -83,6 +83,23 @@
   let currentAssistantMessage = ""; // Track current streaming response
   let currentSearchSources = []; // Track sources used for current response
 
+  // Get preferences - Direct access to preference service using Components
+  const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
+    .getService(Components.interfaces.nsIPrefBranch);
+  
+  const scriptSecurityManager = Components.classes["@mozilla.org/scriptsecuritymanager;1"]
+    .getService(Components.interfaces.nsIScriptSecurityManager);
+  
+  const scriptLoader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
+    .getService(Components.interfaces.mozIJSSubScriptLoader);
+  
+  // Create a minimal Services-like object
+  const Services = {
+    prefs: prefsService,
+    scriptSecurityManager: scriptSecurityManager,
+    scriptloader: scriptLoader
+  };
+
   // ============================================
   // Load Mozilla Readability for content extraction
   // ============================================
@@ -100,23 +117,6 @@
     logWarn("Could not load Readability.js:", e.message);
     // Readability will be null, fallback extraction will be used
   }
-
-  // Get preferences - Direct access to preference service using Components
-  const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
-    .getService(Components.interfaces.nsIPrefBranch);
-  
-  const scriptSecurityManager = Components.classes["@mozilla.org/scriptsecuritymanager;1"]
-    .getService(Components.interfaces.nsIScriptSecurityManager);
-  
-  const scriptLoader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
-    .getService(Components.interfaces.mozIJSSubScriptLoader);
-  
-  // Create a minimal Services-like object
-  const Services = {
-    prefs: prefsService,
-    scriptSecurityManager: scriptSecurityManager,
-    scriptloader: scriptLoader
-  };
   
   function getPref(name, defaultValue) {
     try {
@@ -345,9 +345,18 @@ Do NOT explain. Just reply with one word.`
     let lastInputTime = Date.now();
 
     // Listen for input changes
+    // Clear text selection flag when user focuses back on the input
+    urlbarInput.addEventListener("focus", () => {
+      if (isSelectingInContainer) {
+        isSelectingInContainer = false;
+        log("Selection flag cleared - urlbar input refocused");
+      }
+    });
+
     urlbarInput.addEventListener("input", (e) => {
       inputValue = e.target.value;
       lastInputTime = Date.now();
+      isSelectingInContainer = false; // User is typing, clear selection state
       
       if (isLLMMode) {
         // Update query while in LLM mode
@@ -1810,15 +1819,20 @@ Provide a direct, informative answer with citations:`;
     
     log("User message added. Total children:", conversationContainer.children.length);
     
-    // Scroll so the user's message is at the top of the visible area
-    setTimeout(() => {
-      const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
-      if (urlbarViewBodyInner && messageDiv) {
-        const containerTop = urlbarViewBodyInner.getBoundingClientRect().top;
-        const messageTop = messageDiv.getBoundingClientRect().top;
-        urlbarViewBodyInner.scrollTop += (messageTop - containerTop);
-      }
-    }, LIMITS.SCROLL_DELAY_MESSAGE);
+    // Scroll so the user's follow-up message is at the top of the visible area
+    // Use requestAnimationFrame to ensure layout is complete before measuring
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const scrollContainer = document.querySelector(".urlbarView-body-inner");
+        if (scrollContainer && messageDiv) {
+          const scrollRect = scrollContainer.getBoundingClientRect();
+          const msgRect = messageDiv.getBoundingClientRect();
+          const offset = msgRect.top - scrollRect.top;
+          scrollContainer.scrollTop += offset;
+          log("Scrolled to user message, offset:", offset);
+        }
+      });
+    });
   }
 
   function createConversationContainer() {
@@ -1881,20 +1895,15 @@ Provide a direct, informative answer with citations:`;
       
       e.stopPropagation();
       
-      // After selection is done, refocus urlbar to keep it open
-      // Use a short delay so the selection is preserved
+      // Keep the urlbar open via attributes but do NOT refocus the input,
+      // because focus() would clear the text selection and prevent Ctrl+C
       if (isSelectingInContainer) {
-        setTimeout(() => {
-          isSelectingInContainer = false;
-          const urlbarInput = document.getElementById("urlbar-input");
-          const urlbar = document.getElementById("urlbar");
-          if (urlbarInput && urlbar && isLLMMode) {
-            urlbar.setAttribute("open", "true");
-            urlbar.setAttribute("breakout-extend", "true");
-            urlbarInput.focus();
-            log("Refocused urlbar after text selection");
-          }
-        }, 50);
+        const urlbar = document.getElementById("urlbar");
+        if (urlbar && isLLMMode) {
+          urlbar.setAttribute("open", "true");
+          urlbar.setAttribute("breakout-extend", "true");
+        }
+        // Flag stays true — cleared when user clicks back on the input or types
       }
     }, false);
     
@@ -1913,17 +1922,11 @@ Provide a direct, informative answer with citations:`;
     // Handle mouseup outside the container (user dragged selection beyond it)
     document.addEventListener("mouseup", () => {
       if (isSelectingInContainer) {
-        setTimeout(() => {
-          isSelectingInContainer = false;
-          const urlbarInput = document.getElementById("urlbar-input");
-          const urlbar = document.getElementById("urlbar");
-          if (urlbarInput && urlbar && isLLMMode) {
-            urlbar.setAttribute("open", "true");
-            urlbar.setAttribute("breakout-extend", "true");
-            urlbarInput.focus();
-            log("Refocused urlbar after text selection (global mouseup)");
-          }
-        }, 50);
+        const urlbar = document.getElementById("urlbar");
+        if (urlbar && isLLMMode) {
+          urlbar.setAttribute("open", "true");
+          urlbar.setAttribute("breakout-extend", "true");
+        }
       }
     }, true);
 
