@@ -78,6 +78,20 @@
   let originalPlaceholder = "";
   let isClickingLink = false; // Track if we're currently clicking a link
   let isSelectingInContainer = false; // Track if user is selecting text in the container
+
+  // Suppress/restore the native urlbar blur handler.
+  // This follows the same pattern Firefox uses in UrlbarController.focusOnUnifiedSearchButton()
+  // to prevent the panel from closing when focus temporarily leaves the input.
+  function suppressNativeBlur() {
+    if (window.gURLBar && window.gURLBar.inputField) {
+      window.gURLBar.inputField.removeEventListener("blur", window.gURLBar);
+    }
+  }
+  function restoreNativeBlur() {
+    if (window.gURLBar && window.gURLBar.inputField) {
+      window.gURLBar.inputField.addEventListener("blur", window.gURLBar);
+    }
+  }
   let conversationHistory = []; // Store conversation messages for follow-ups
   let conversationContainer = null; // Container for all messages
   let currentAssistantMessage = ""; // Track current streaming response
@@ -345,18 +359,27 @@ Do NOT explain. Just reply with one word.`
     let lastInputTime = Date.now();
 
     // Listen for input changes
-    // Clear text selection flag when user focuses back on the input
+    // When the user focuses back on the input, restore the native blur listener
+    // and clear the selection flag so things go back to normal
     urlbarInput.addEventListener("focus", () => {
       if (isSelectingInContainer) {
         isSelectingInContainer = false;
-        log("Selection flag cleared - urlbar input refocused");
+        // Restore native blur handler (was suppressed during text selection)
+        if (window.gURLBar && window.gURLBar.inputField) {
+          window.gURLBar.inputField.addEventListener("blur", window.gURLBar);
+        }
+        log("Selection ended - native blur restored, urlbar input refocused");
       }
     });
 
     urlbarInput.addEventListener("input", (e) => {
       inputValue = e.target.value;
       lastInputTime = Date.now();
-      isSelectingInContainer = false; // User is typing, clear selection state
+      // User is typing — clear selection state and restore native blur
+      if (isSelectingInContainer) {
+        isSelectingInContainer = false;
+        restoreNativeBlur();
+      }
       
       if (isLLMMode) {
         // Update query while in LLM mode
@@ -1545,6 +1568,7 @@ Provide a direct, informative answer with citations:`;
         e.preventDefault();
         e.stopPropagation();
         isClickingLink = true;
+        suppressNativeBlur();
       });
       
       pill.addEventListener('click', (e) => {
@@ -1565,7 +1589,7 @@ Provide a direct, informative answer with citations:`;
             topWindow.open(source.url, '_blank');
           }
           
-          // Keep urlbar open
+          // Keep urlbar open and restore native blur
           setTimeout(() => {
             const urlbarInput = document.getElementById("urlbar-input");
             const urlbar = document.getElementById("urlbar");
@@ -1574,10 +1598,12 @@ Provide a direct, informative answer with citations:`;
               urlbarInput.focus();
             }
             isClickingLink = false;
+            restoreNativeBlur();
           }, LIMITS.FOCUS_RESTORE_DELAY);
         } catch (err) {
           logError('Failed to open source:', err);
           isClickingLink = false;
+          restoreNativeBlur();
         }
       });
       
@@ -1710,6 +1736,11 @@ Provide a direct, informative answer with citations:`;
     currentProvider = null;
     currentQuery = "";
     
+    // Always restore native blur handler and clear interaction flags on deactivation
+    isClickingLink = false;
+    isSelectingInContainer = false;
+    restoreNativeBlur();
+    
     // Clear conversation history
     conversationHistory = [];
     
@@ -1819,17 +1850,13 @@ Provide a direct, informative answer with citations:`;
     
     log("User message added. Total children:", conversationContainer.children.length);
     
-    // Scroll so the user's follow-up message is at the top of the visible area
-    // Use requestAnimationFrame to ensure layout is complete before measuring
+    // Scroll so the user's follow-up message is at the top of the visible area.
+    // Use double-rAF to ensure the DOM has been laid out and painted.
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        const scrollContainer = document.querySelector(".urlbarView-body-inner");
-        if (scrollContainer && messageDiv) {
-          const scrollRect = scrollContainer.getBoundingClientRect();
-          const msgRect = messageDiv.getBoundingClientRect();
-          const offset = msgRect.top - scrollRect.top;
-          scrollContainer.scrollTop += offset;
-          log("Scrolled to user message, offset:", offset);
+        if (messageDiv) {
+          messageDiv.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          log("Scrolled to user message via scrollIntoView");
         }
       });
     });
@@ -1865,9 +1892,6 @@ Provide a direct, informative answer with citations:`;
     container.className = "llm-conversation-container";
     log("Creating new conversation container");
     
-    // Stop events from propagating to prevent urlbar from closing
-    // For links, we need special handling to allow them to work
-    // For text selection, we set a flag so blur doesn't deactivate
     container.addEventListener("mousedown", (e) => {
       const target = e.target;
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
@@ -1875,10 +1899,12 @@ Provide a direct, informative answer with citations:`;
       if (linkElement) {
         log("Container mousedown - link detected, setting flag");
         isClickingLink = true;
+        suppressNativeBlur();
         return;
       }
       
-      // Set selection flag to prevent blur from closing the urlbar
+      // Suppress native blur so the panel stays open during text selection
+      suppressNativeBlur();
       isSelectingInContainer = true;
       log("Container mousedown - selection started, target:", target.tagName);
       e.stopPropagation();
@@ -1889,34 +1915,30 @@ Provide a direct, informative answer with citations:`;
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
       
       if (linkElement) {
-        log("Container mouseup - link detected, not blocking");
-        return;
+        return; // Link handler takes care of restoring blur
       }
       
       e.stopPropagation();
       
-      // Keep the urlbar open via attributes but do NOT refocus the input,
-      // because focus() would clear the text selection and prevent Ctrl+C
+      // Keep the urlbar panel open. Do NOT refocus the input here,
+      // because that would clear the text selection before the user can Ctrl+C.
+      // The native blur listener stays suppressed while the user has a selection.
+      // It gets restored when the user clicks back on the input or types.
       if (isSelectingInContainer) {
         const urlbar = document.getElementById("urlbar");
         if (urlbar && isLLMMode) {
           urlbar.setAttribute("open", "true");
           urlbar.setAttribute("breakout-extend", "true");
         }
-        // Flag stays true — cleared when user clicks back on the input or types
       }
     }, false);
     
     container.addEventListener("click", (e) => {
       const target = e.target;
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
-      
-      if (linkElement) {
-        log("Container click - link detected, not blocking");
-        return;
+      if (!linkElement) {
+        e.stopPropagation();
       }
-      
-      e.stopPropagation();
     }, false);
     
     // Handle mouseup outside the container (user dragged selection beyond it)
@@ -1980,6 +2002,7 @@ Provide a direct, informative answer with citations:`;
           // Open the source URL in background tab
           try {
             isClickingLink = true;
+            suppressNativeBlur();
             const topWindow = window.top || window;
             const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
             
@@ -2010,10 +2033,12 @@ Provide a direct, informative answer with citations:`;
                 urlbarInput.focus();
               }
               isClickingLink = false;
+              restoreNativeBlur();
             }, LIMITS.FOCUS_RESTORE_DELAY);
           } catch (err) {
             logError('Failed to open citation source:', err);
             isClickingLink = false;
+            restoreNativeBlur();
           }
         }
         return;
@@ -2024,6 +2049,11 @@ Provide a direct, informative answer with citations:`;
         e.preventDefault();
         e.stopPropagation();
         e.stopImmediatePropagation();
+
+        if (eventType === 'mousedown') {
+          isClickingLink = true;
+          suppressNativeBlur();
+        }
         
         // Only open on mouseup (acts like a click)
         if (eventType === 'mouseup') {
@@ -2052,11 +2082,13 @@ Provide a direct, informative answer with citations:`;
                 urlbarInput.focus();
               }
               isClickingLink = false;
+              restoreNativeBlur();
               log('Refocused urlbar');
             }, LIMITS.FOCUS_RESTORE_DELAY);
           } catch (err) {
             logError('Failed to open link:', err);
             isClickingLink = false;
+            restoreNativeBlur();
           }
         }
       }
