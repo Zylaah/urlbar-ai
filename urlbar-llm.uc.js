@@ -119,14 +119,16 @@
   // ============================================
   let ReadabilityClass = null;
   
-  // Try to load Readability.js from the same directory
+  // Try to load Readability.js from the same directory as this script
   try {
-    // For fx-autoconfig, scripts are in chrome://userchrome/content/js/
-    const scriptPath = "chrome://userchrome/content/js/Readability.js";
+    // Derive the directory from this script's own path
+    const currentScriptPath = Components.stack.filename;
+    const scriptDir = currentScriptPath.substring(0, currentScriptPath.lastIndexOf('/') + 1);
+    const readabilityPath = scriptDir + "Readability.js";
     const scope = {};
-    Services.scriptloader.loadSubScript(scriptPath, scope);
+    Services.scriptloader.loadSubScript(readabilityPath, scope);
     ReadabilityClass = scope.Readability;
-    log("Loaded Mozilla Readability from", scriptPath);
+    log("Loaded Mozilla Readability from", readabilityPath);
   } catch (e) {
     logWarn("Could not load Readability.js:", e.message);
     // Readability will be null, fallback extraction will be used
@@ -400,6 +402,15 @@ Do NOT explain. Just reply with one word.`
         } else {
           urlbar.removeAttribute("llm-hint");
         }
+      }
+    }, true);
+
+    // Intercept paste events in LLM mode to prevent native urlbar from
+    // starting a new search query (which would destroy the conversation)
+    urlbarInput.addEventListener("paste", (e) => {
+      if (isLLMMode) {
+        e.stopPropagation();
+        log("Paste event captured in LLM mode");
       }
     }, true);
 
@@ -1890,6 +1901,8 @@ Provide a direct, informative answer with citations:`;
     // Create conversation container
     container = document.createElement("div");
     container.className = "llm-conversation-container";
+    // Make the container focusable so it can receive keyboard events (Ctrl+C)
+    container.setAttribute("tabindex", "-1");
     log("Creating new conversation container");
     
     container.addEventListener("mousedown", (e) => {
@@ -1906,6 +1919,12 @@ Provide a direct, informative answer with citations:`;
       // Suppress native blur so the panel stays open during text selection
       suppressNativeBlur();
       isSelectingInContainer = true;
+      
+      // Focus the container so it receives keyboard events (Ctrl+C for copy).
+      // This must happen after suppressNativeBlur() so the input's blur
+      // doesn't close the panel.
+      container.focus({ preventScroll: true });
+      
       log("Container mousedown - selection started, target:", target.tagName);
       e.stopPropagation();
     }, false);
@@ -1920,10 +1939,8 @@ Provide a direct, informative answer with citations:`;
       
       e.stopPropagation();
       
-      // Keep the urlbar panel open. Do NOT refocus the input here,
-      // because that would clear the text selection before the user can Ctrl+C.
-      // The native blur listener stays suppressed while the user has a selection.
-      // It gets restored when the user clicks back on the input or types.
+      // Keep the urlbar panel open. The container has focus so Ctrl+C will work.
+      // Native blur stays suppressed until user clicks back on the input or types.
       if (isSelectingInContainer) {
         const urlbar = document.getElementById("urlbar");
         if (urlbar && isLLMMode) {

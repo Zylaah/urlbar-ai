@@ -349,6 +349,7 @@
   user-select: text !important;
   -moz-user-select: text !important;
   cursor: text !important;
+  outline: none !important;
 }
 
 /* Message pair container - holds both user and assistant messages together */
