@@ -754,6 +754,10 @@ Do NOT explain. Just reply with one word.`
     // Inline code (`code`) - do this first to protect code content
     html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
     
+    // Bold-italic (***text*** or ___text___) - must be before bold and italic
+    html = html.replace(/\*\*\*([^*]+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+    html = html.replace(/___([^_]+?)___/g, '<strong><em>$1</em></strong>');
+    
     // Bold (**text** or __text__) - must be before italic to avoid conflicts
     html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
     html = html.replace(/__([^_]+?)__/g, '<strong>$1</strong>');
@@ -790,6 +794,9 @@ Do NOT explain. Just reply with one word.`
     // Citation markers [1], [2], etc. - convert to styled spans with data attribute
     // Match [1], [2], [3] etc. but not [text](url) links which were already converted
     html = html.replace(/\[(\d+)\](?!\()/g, '<span class="llm-citation-marker" data-source="$1">$1</span>');
+    
+    // Horizontal rule (---, ***, ___) - must be before line breaks
+    html = html.replace(/^(?:---+|\*\*\*+|___+)\s*$/gm, '<hr class="llm-markdown-hr"/>');
     
     // Line breaks
     html = html.replace(/\n/g, '<br/>');

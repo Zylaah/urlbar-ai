@@ -518,6 +518,13 @@
   background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06));
 }
 
+/* Horizontal rule */
+.llm-markdown-hr {
+  border: none;
+  border-top: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.15));
+  margin: 12px 0;
+}
+
 /* Also add table styles for the old urlbarView-row-llm context */
 .urlbarView-row-llm .urlbarView-title table {
   border-collapse: collapse;
