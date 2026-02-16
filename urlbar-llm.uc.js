@@ -77,6 +77,7 @@
   let abortController = null;
   let originalPlaceholder = "";
   let isClickingLink = false; // Track if we're currently clicking a link
+  let isSelectingInContainer = false; // Track if user is selecting text in the container
   let conversationHistory = []; // Store conversation messages for follow-ups
   let conversationContainer = null; // Container for all messages
   let currentAssistantMessage = ""; // Track current streaming response
@@ -424,9 +425,13 @@ Do NOT explain. Just reply with one word.`
 
     // Clean up on blur (when urlbar loses focus)
     urlbarInput.addEventListener("blur", (e) => {
-      // Don't deactivate if clicking a link
+      // Don't deactivate if clicking a link or selecting text
       if (isClickingLink) {
         log("Blur ignored - clicking link");
+        return;
+      }
+      if (isSelectingInContainer) {
+        log("Blur ignored - selecting text in container");
         return;
       }
       
@@ -434,9 +439,13 @@ Do NOT explain. Just reply with one word.`
       const llmContainer = document.querySelector(".llm-conversation-container");
       
       setTimeout(() => {
-        // Double check we're not clicking a link
+        // Double check we're not clicking a link or selecting text
         if (isClickingLink) {
           log("Blur ignored in timeout - clicking link");
+          return;
+        }
+        if (isSelectingInContainer) {
+          log("Blur ignored in timeout - selecting text");
           return;
         }
         
@@ -456,12 +465,6 @@ Do NOT explain. Just reply with one word.`
           isLinkClick
         );
         
-        // Don't deactivate if we're clicking a link
-        if (isClickingLink) {
-          log("Blur ignored - isClickingLink flag set");
-          return;
-        }
-        
         if (document.activeElement !== urlbarInput && isLLMMode && !clickedInsideLLM) {
           log("Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", relatedTarget?.tagName);
           deactivateLLMMode(urlbar, urlbarInput, true);
@@ -479,9 +482,9 @@ Do NOT explain. Just reply with one word.`
         mutations.forEach((mutation) => {
           if (mutation.type === "attributes" && mutation.attributeName === "hidden") {
             // Panel is now hidden
-            // Don't deactivate if we're clicking a link or in the conversation
-            if (isClickingLink) {
-              log("View hide ignored - clicking link");
+            // Don't deactivate if we're clicking a link, selecting text, or in the conversation
+            if (isClickingLink || isSelectingInContainer) {
+              log("View hide ignored - clicking link or selecting text");
               return;
             }
             const llmContainer = document.querySelector(".llm-conversation-container");
@@ -504,8 +507,8 @@ Do NOT explain. Just reply with one word.`
       for (const mutation of mutations) {
         if (mutation.type === "attributes" && mutation.attributeName === "open") {
           if (!urlbar.hasAttribute("open") && isLLMMode) {
-            if (isClickingLink) {
-              log("Urlbar close ignored - clicking link");
+            if (isClickingLink || isSelectingInContainer) {
+              log("Urlbar close ignored - clicking link or selecting text");
               return;
             }
             const llmContainer = document.querySelector(".llm-conversation-container");
@@ -1807,11 +1810,13 @@ Provide a direct, informative answer with citations:`;
     
     log("User message added. Total children:", conversationContainer.children.length);
     
-    // Scroll to bottom
+    // Scroll so the user's message is at the top of the visible area
     setTimeout(() => {
       const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
-      if (urlbarViewBodyInner) {
-        urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
+      if (urlbarViewBodyInner && messageDiv) {
+        const containerTop = urlbarViewBodyInner.getBoundingClientRect().top;
+        const messageTop = messageDiv.getBoundingClientRect().top;
+        urlbarViewBodyInner.scrollTop += (messageTop - containerTop);
       }
     }, LIMITS.SCROLL_DELAY_MESSAGE);
   }
@@ -1848,21 +1853,22 @@ Provide a direct, informative answer with citations:`;
     
     // Stop events from propagating to prevent urlbar from closing
     // For links, we need special handling to allow them to work
+    // For text selection, we set a flag so blur doesn't deactivate
     container.addEventListener("mousedown", (e) => {
       const target = e.target;
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
       
       if (linkElement) {
         log("Container mousedown - link detected, setting flag");
-        // Set flag immediately to prevent blur from deactivating
         isClickingLink = true;
-        // Don't stop propagation for links
         return;
       }
       
+      // Set selection flag to prevent blur from closing the urlbar
+      isSelectingInContainer = true;
+      log("Container mousedown - selection started, target:", target.tagName);
       e.stopPropagation();
-      log("Container mousedown blocked, target:", target.tagName);
-    }, false); // Changed to bubble phase
+    }, false);
     
     container.addEventListener("mouseup", (e) => {
       const target = e.target;
@@ -1870,13 +1876,27 @@ Provide a direct, informative answer with citations:`;
       
       if (linkElement) {
         log("Container mouseup - link detected, not blocking");
-        // Don't stop propagation for links
         return;
       }
       
       e.stopPropagation();
-      log("Container mouseup blocked, target:", target.tagName);
-    }, false); // Changed to bubble phase
+      
+      // After selection is done, refocus urlbar to keep it open
+      // Use a short delay so the selection is preserved
+      if (isSelectingInContainer) {
+        setTimeout(() => {
+          isSelectingInContainer = false;
+          const urlbarInput = document.getElementById("urlbar-input");
+          const urlbar = document.getElementById("urlbar");
+          if (urlbarInput && urlbar && isLLMMode) {
+            urlbar.setAttribute("open", "true");
+            urlbar.setAttribute("breakout-extend", "true");
+            urlbarInput.focus();
+            log("Refocused urlbar after text selection");
+          }
+        }, 50);
+      }
+    }, false);
     
     container.addEventListener("click", (e) => {
       const target = e.target;
@@ -1884,14 +1904,29 @@ Provide a direct, informative answer with citations:`;
       
       if (linkElement) {
         log("Container click - link detected, not blocking");
-        // Don't stop propagation for links
         return;
       }
       
       e.stopPropagation();
-      log("Container click blocked, target:", target.tagName);
-    }, false); // Changed to bubble phase
+    }, false);
     
+    // Handle mouseup outside the container (user dragged selection beyond it)
+    document.addEventListener("mouseup", () => {
+      if (isSelectingInContainer) {
+        setTimeout(() => {
+          isSelectingInContainer = false;
+          const urlbarInput = document.getElementById("urlbar-input");
+          const urlbar = document.getElementById("urlbar");
+          if (urlbarInput && urlbar && isLLMMode) {
+            urlbar.setAttribute("open", "true");
+            urlbar.setAttribute("breakout-extend", "true");
+            urlbarInput.focus();
+            log("Refocused urlbar after text selection (global mouseup)");
+          }
+        }, 50);
+      }
+    }, true);
+
     resultsContainer.appendChild(container);
     
     // Show urlbarView-body-inner
