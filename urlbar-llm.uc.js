@@ -66,7 +66,7 @@
         name: "Gemini",
         apiKey: "",
         baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
-        model: "gemini-2.0-flash"
+        model: "gemini-2.5-flash"
       }
     },
     ollamaWebSearch: {
@@ -253,16 +253,17 @@ Do NOT explain. Just reply with one word.`
         responseText = (json.message?.content || "").trim().toUpperCase();
       } else {
         // OpenAI-compatible API (non-streaming)
-        const url = currentProvider.baseUrl.endsWith('/chat/completions')
+        let url = currentProvider.baseUrl.endsWith('/chat/completions')
           ? currentProvider.baseUrl
           : `${currentProvider.baseUrl}/chat/completions`;
-
+        const isGemini = currentProvider.name === "Gemini";
+        if (isGemini && currentProvider.apiKey) {
+          url += (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(currentProvider.apiKey);
+        }
+        const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${currentProvider.apiKey}` };
         const response = await fetch(url, {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${currentProvider.apiKey}`
-          },
+          headers,
           body: JSON.stringify({
             model: currentProvider.model,
             messages: classificationPrompt,
@@ -2295,13 +2296,17 @@ Provide a direct, informative answer with citations:`;
    */
   async function streamResponse(messages, titleElement, signal) {
     const isOllama = currentProvider.name === "Ollama";
+    const isGemini = currentProvider.name === "Gemini";
 
     // Build request URL and headers
-    const url = isOllama
+    let url = isOllama
       ? currentProvider.baseUrl
       : (currentProvider.baseUrl.endsWith('/chat/completions')
           ? currentProvider.baseUrl
           : `${currentProvider.baseUrl}/chat/completions`);
+    if (isGemini && currentProvider.apiKey) {
+      url += (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(currentProvider.apiKey);
+    }
 
     const headers = { "Content-Type": "application/json" };
     if (!isOllama) {

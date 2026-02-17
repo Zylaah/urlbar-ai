@@ -141,7 +141,7 @@
     "property": "extension.urlbar-llm.gemini-model",
     "label": "Gemini Model",
     "type": "dropdown",
-    "defaultValue": "gemini-2.0-flash",
+    "defaultValue": "gemini-2.5-flash",
     "description": "Select the Gemini model to use.",
     "options": [
       {
