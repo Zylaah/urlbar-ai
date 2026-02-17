@@ -454,7 +454,8 @@ Do NOT explain. Just reply with one word.`
       } else if (e.key === "Escape" && isLLMMode) {
         e.preventDefault();
         e.stopPropagation();
-        deactivateLLMMode(urlbar, urlbarInput, true);
+        // Exit LLM mode but keep urlbar open (like Backspace on empty input)
+        deactivateLLMMode(urlbar, urlbarInput, false);
       } else if ((e.key === "Delete" || e.key === "Backspace") && isLLMMode) {
         // Exit LLM mode if input is empty and user presses Delete/Backspace
         const currentValue = urlbarInput.value || "";
