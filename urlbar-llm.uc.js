@@ -1763,6 +1763,20 @@ Provide a direct, informative answer with citations:`;
     currentProvider = null;
     currentQuery = "";
     
+    // Abort any in-flight LLM request so we don't keep streaming in the background
+    if (abortController) {
+      try {
+        abortController.abort();
+      } catch (e) {
+        // Ignore abort errors
+      }
+      abortController = null;
+    }
+    
+    // Clear any partial assistant state and search sources
+    currentAssistantMessage = "";
+    currentSearchSources = [];
+    
     // Always restore native blur handler and clear interaction flags on deactivation
     isClickingLink = false;
     isSelectingInContainer = false;
@@ -1787,6 +1801,7 @@ Provide a direct, informative answer with citations:`;
     urlbar.removeAttribute("llm-mode-active");
     urlbar.removeAttribute("llm-provider");
     urlbar.removeAttribute("llm-hint");
+    urlbar.removeAttribute("is-llm-thinking");
     
     // Hide pill
     const labelBox = document.getElementById("urlbar-label-box");
