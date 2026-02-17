@@ -38,6 +38,11 @@
   color: black !important;
 }
 
+#urlbar[llm-provider="gemini"] #urlbar-label-box {
+  background: linear-gradient(135deg, #4285f4 0%, #5e97f6 100%) !important;
+  box-shadow: 0 0 10px 0 rgba(66, 133, 244, 0.5);
+}
+
 /* ============================================
    LLM Mode Glow Animations (Provider-specific)
    Override Zen's default glow with provider colors
@@ -73,6 +78,16 @@
   }
 }
 
+/* Gemini - Blue glow */
+@keyframes llm-urlbar-glow-gemini {
+  0% {
+    box-shadow: 0 0 20px rgba(66, 133, 244, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 250px rgba(66, 133, 244, 0);
+  }
+}
+
 /* LLM mode glow animation on the provider pill */
 #urlbar[llm-mode-active="true"] #urlbar-label-box {
   position: relative;
@@ -98,6 +113,10 @@
 
 #urlbar[llm-provider="ollama"] #urlbar-label-box[animate-glow="true"]::before {
   animation: llm-urlbar-glow-ollama ease-out 1s forwards;
+}
+
+#urlbar[llm-provider="gemini"] #urlbar-label-box[animate-glow="true"]::before {
+  animation: llm-urlbar-glow-gemini ease-out 1s forwards;
 }
 
 /* LLM Result Row Styling - Use native Zen styling */
@@ -314,6 +333,10 @@
   background: #888;
 }
 
+#urlbar[llm-provider="gemini"] .llm-search-spinner {
+  background: #4285f4;
+}
+
 /* Provider-specific styling (optional) */
 #urlbar[llm-provider="mistral"] {
   /* Mistral-specific styles */
@@ -325,6 +348,10 @@
 
 #urlbar[llm-provider="ollama"] {
   /* Ollama-specific styles */
+}
+
+#urlbar[llm-provider="gemini"] {
+  /* Gemini-specific styles */
 }
 
 /* Hint indicator */
@@ -642,6 +669,10 @@
   background: linear-gradient(135deg, #666 0%, #888 100%);
 }
 
+#urlbar[llm-provider="gemini"] .llm-source-pill-index {
+  background: linear-gradient(135deg, #4285f4 0%, #5e97f6 100%);
+}
+
 /* Inline citation markers styling */
 .llm-message-content {
   /* Make citation numbers stand out slightly */
@@ -686,6 +717,10 @@
 
 #urlbar[llm-provider="ollama"] .llm-citation-marker {
   background: linear-gradient(135deg, #666 0%, #888 100%);
+}
+
+#urlbar[llm-provider="gemini"] .llm-citation-marker {
+  background: linear-gradient(135deg, #4285f4 0%, #5e97f6 100%);
 }
 
 /* Highlight animation for source pill when citation is clicked */

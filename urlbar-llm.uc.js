@@ -2,7 +2,7 @@
  * URL Bar LLM Integration for Zen Browser
  * 
  * Usage:
- * 1. Type "@provider" (e.g., "@mistral", "@openai", "@ollama")
+ * 1. Type "@provider" (e.g., "@mistral", "@openai", "@gemini", "@ollama")
  * 2. Press Tab to activate LLM mode
  * 3. Type your message
  * 4. Press Enter to send and stream response
@@ -61,6 +61,12 @@
         apiKey: null, // Not needed for local LLM
         baseUrl: "http://localhost:11434/api/chat",
         model: "mistral"
+      },
+      gemini: {
+        name: "Gemini",
+        apiKey: "",
+        baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
+        model: "gemini-2.0-flash"
       }
     },
     ollamaWebSearch: {
@@ -2185,7 +2191,7 @@ Provide a direct, informative answer with citations:`;
       let searchContext = null;
       let searchResultsForDisplay = null;
       const providerKey = urlbar.getAttribute("llm-provider");
-      const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral' || providerKey === 'ollama';
+      const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral' || providerKey === 'ollama' || providerKey === 'gemini';
       
       // Ask the LLM itself whether the query is within its knowledge scope
       let needsSearch = false;
