@@ -253,9 +253,10 @@ Do NOT explain. Just reply with one word.`
         responseText = (json.message?.content || "").trim().toUpperCase();
       } else {
         // OpenAI-compatible API (non-streaming)
-        let url = currentProvider.baseUrl.endsWith('/chat/completions')
-          ? currentProvider.baseUrl
-          : `${currentProvider.baseUrl}/chat/completions`;
+        const base = currentProvider.baseUrl.replace(/\/+$/, "");
+        let url = base.endsWith('/chat/completions')
+          ? base
+          : base + "/chat/completions";
         const isGemini = currentProvider.name === "Gemini";
         if (isGemini && currentProvider.apiKey) {
           url += (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(currentProvider.apiKey);
@@ -2299,11 +2300,10 @@ Provide a direct, informative answer with citations:`;
     const isGemini = currentProvider.name === "Gemini";
 
     // Build request URL and headers
+    const base = isOllama ? currentProvider.baseUrl : currentProvider.baseUrl.replace(/\/+$/, "");
     let url = isOllama
       ? currentProvider.baseUrl
-      : (currentProvider.baseUrl.endsWith('/chat/completions')
-          ? currentProvider.baseUrl
-          : `${currentProvider.baseUrl}/chat/completions`);
+      : (base.endsWith('/chat/completions') ? base : base + "/chat/completions");
     if (isGemini && currentProvider.apiKey) {
       url += (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(currentProvider.apiKey);
     }
