@@ -2215,13 +2215,13 @@ Provide a direct, informative answer with citations:`;
       if (isWebSearchEnabled() && supportsWebSearch) {
         const isFollowUp = conversationHistory.length > 1;
         // Show evaluating status while the model classifies
-        titleElement.innerHTML = '<span class="llm-search-spinner"></span> Evaluating...';
+        titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Evaluating...</span>';
         needsSearch = await queryNeedsWebSearchLLM(query, isFollowUp, abortController.signal);
       }
       
       if (needsSearch) {
         // Show searching status with spinner
-        titleElement.innerHTML = '<span class="llm-search-spinner"></span> Searching...';
+        titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Searching...</span>';
         
         log('Web search triggered for query:', query);
         const startTime = Date.now();
@@ -2229,7 +2229,7 @@ Provide a direct, informative answer with citations:`;
         
         if (searchResults && searchResults.length > 0) {
           // Update status - fetching content
-          titleElement.innerHTML = '<span class="llm-search-spinner"></span> Reading sources...';
+          titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Reading sources...</span>';
           
           // Fetch actual page content from search results (faster now)
           const resultsWithContent = await fetchSearchResultsContent(searchResults, 3);

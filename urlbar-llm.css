@@ -291,17 +291,22 @@
   }
 }
 
+/* Wrapper for spinner + status text so spinner is vertically centered */
+.llm-status-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* Web search spinner - rotating diamond */
 .llm-search-spinner {
   display: inline-block;
   width: 10px;
   height: 10px;
+  flex-shrink: 0;
   background: var(--zen-primary-color, #5b8def);
   transform: rotate(45deg);
   animation: llm-spinner-rotate 0.8s ease-in-out infinite;
-  vertical-align: middle;
-  margin-right: 8px;
-  margin-bottom: 3px;
   opacity: 0.8;
 }
 
