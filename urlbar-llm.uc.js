@@ -453,10 +453,13 @@
       item.className = "llm-history-list-item";
       item.setAttribute("data-session-index", String(index));
 
+      const metaRow = document.createElement("div");
+      metaRow.className = "llm-history-list-meta";
+
       const title = document.createElement("div");
       title.className = "llm-history-list-title";
       title.textContent = session.title || "(untitled conversation)";
-      item.appendChild(title);
+      metaRow.appendChild(title);
 
       if (session.updatedAt || session.createdAt) {
         const subtitle = document.createElement("div");
@@ -467,10 +470,27 @@
         } catch (e) {
           subtitle.textContent = "";
         }
-        item.appendChild(subtitle);
+        metaRow.appendChild(subtitle);
       }
 
-      item.addEventListener("click", (e) => {
+      item.appendChild(metaRow);
+
+      const actions = document.createElement("div");
+      actions.className = "llm-history-list-actions";
+
+      const openButton = document.createElement("button");
+      openButton.className = "llm-history-button llm-history-open-button";
+      openButton.textContent = "Open";
+
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "llm-history-button llm-history-delete-button";
+      deleteButton.textContent = "Delete";
+
+      actions.appendChild(openButton);
+      actions.appendChild(deleteButton);
+      item.appendChild(actions);
+
+      openButton.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
         const idxAttr = item.getAttribute("data-session-index");
@@ -481,8 +501,42 @@
         historyIndex = idx;
         lastHistoryProviderKey = providerKey;
         const selected = sessions[idx];
-        log("History list item clicked, loading session index", idx, "for provider:", providerKey);
+        log("History list item opened, loading session index", idx, "for provider:", providerKey);
         loadSessionIntoCurrentConversation(selected, urlbar, urlbarInput);
+      });
+
+      deleteButton.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const idxAttr = item.getAttribute("data-session-index");
+        const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
+        if (!Number.isFinite(idx) || idx < 0 || idx >= sessions.length) {
+          return;
+        }
+
+        const data = getNormalizedHistory();
+        // Remove by id to avoid index drift
+        const targetId = sessions[idx].id;
+        data.sessions = data.sessions.filter((s) => s.id !== targetId);
+        saveTabHistoryRaw(data);
+
+        // Remove from current in-memory list UI
+        item.remove();
+        sessions.splice(idx, 1);
+
+        // Reindex remaining items' data-session-index attributes
+        const remainingItems = listRoot.querySelectorAll(".llm-history-list-item");
+        remainingItems.forEach((el, newIndex) => {
+          el.setAttribute("data-session-index", String(newIndex));
+        });
+
+        log("Deleted history session from provider:", providerKey, "session id:", targetId);
+
+        // If no sessions left, clear the list
+        if (!sessions.length) {
+          conversationContainer.textContent = "";
+          urlbarInput.setAttribute("placeholder", "Ask anything...");
+        }
       });
 
       listRoot.appendChild(item);
