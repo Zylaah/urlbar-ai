@@ -461,6 +461,28 @@
     urlbarInput.focus();
   }
 
+  function isShowingHistoryList() {
+    return !!(conversationContainer && conversationContainer.querySelector(".llm-history-list"));
+  }
+
+  function dismissHistoryList(urlbar, urlbarInput) {
+    if (!isShowingHistoryList()) {
+      return;
+    }
+    if (conversationContainer && conversationContainer.parentNode) {
+      conversationContainer.remove();
+    }
+    conversationContainer = null;
+    conversationHistory = [];
+    urlbarInput.setAttribute("placeholder", "Ask anything...");
+    const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+    if (urlbarViewBodyInner) {
+      urlbarViewBodyInner.style.display = "none";
+    }
+    urlbarInput.focus();
+    log("Dismissed history list, back to LLM mode");
+  }
+
   function showHistoryListForProvider(providerKey, urlbar, urlbarInput) {
     const sessions = getProviderSessions(providerKey);
     if (!sessions.length) {
@@ -920,6 +942,11 @@ Do NOT explain. Just reply with one word.`
         // Send query to LLM (follow-up or new)
         const query = currentQuery;
         if (query.trim()) {
+          // If history list is visible, clear it so we show the new conversation
+          if (isShowingHistoryList()) {
+            conversationContainer.innerHTML = "";
+          }
+
           // Add user message to conversation
           conversationHistory.push({
             role: "user",
@@ -938,7 +965,14 @@ Do NOT explain. Just reply with one word.`
           // Reset history navigation when sending a new message
           historyIndex = -1;
           lastHistoryProviderKey = urlbar.getAttribute("llm-provider") || null;
+          currentSessionId = null;
           sendToLLM(urlbar, urlbarInput, query);
+        }
+      } else if (isLLMMode && e.altKey && e.key === "ArrowDown") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (isShowingHistoryList()) {
+          dismissHistoryList(urlbar, urlbarInput);
         }
       } else if (isLLMMode && e.altKey && e.key === "ArrowUp") {
         e.preventDefault();
