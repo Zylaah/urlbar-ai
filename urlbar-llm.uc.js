@@ -124,22 +124,11 @@
   const scriptLoader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
     .getService(Components.interfaces.mozIJSSubScriptLoader);
 
-  // SessionStore for per-tab custom data (may be unavailable in some contexts)
-  const sessionStore = (() => {
-    try {
-      return Components.classes["@mozilla.org/browser/sessionstore;1"]
-        .getService(Components.interfaces.nsISessionStore);
-    } catch (e) {
-      return null;
-    }
-  })();
-  
   // Create a minimal Services-like object
   const Services = {
     prefs: prefsService,
     scriptSecurityManager: scriptSecurityManager,
-    scriptloader: scriptLoader,
-    sessionStore
+    scriptloader: scriptLoader
   };
 
   // ============================================
@@ -156,23 +145,47 @@
   }
 
   function loadTabHistoryRaw() {
-    if (!Services.sessionStore) {
-      log("SessionStore not available; history load skipped");
-      return null;
-    }
     try {
       const tab = getCurrentTab();
       if (!tab) {
         return null;
       }
-      const value = Services.sessionStore.getTabValue(tab, HISTORY_STORAGE_KEY);
-      if (!value) {
-        return null;
+
+      // Prefer modern JS SessionStore module if available
+      if (window.SessionStore && typeof window.SessionStore.getCustomTabValue === "function") {
+        const value = window.SessionStore.getCustomTabValue(tab, HISTORY_STORAGE_KEY);
+        if (!value) {
+          return null;
+        }
+        try {
+          return JSON.parse(value);
+        } catch (e) {
+          logWarn("Failed to parse LLM history from JS SessionStore:", e);
+          return null;
+        }
       }
+
+      // Fallback: legacy nsISessionStore service (may not exist in Zen)
       try {
-        return JSON.parse(value);
+        const legacy = Components.classes["@mozilla.org/browser/sessionstore;1"]
+          .getService(Components.interfaces.nsISessionStore);
+        const value = legacy.getTabValue(tab, HISTORY_STORAGE_KEY);
+        if (!value) {
+          return null;
+        }
+        try {
+          return JSON.parse(value);
+        } catch (e) {
+          logWarn("Failed to parse LLM history from legacy SessionStore:", e);
+          return null;
+        }
       } catch (e) {
-        logWarn("Failed to parse LLM history from SessionStore:", e);
+        // Ignore; legacy service not available
+      }
+
+      // No SessionStore available
+      log("SessionStore not available; history load skipped");
+      if (!value) {
         return null;
       }
     } catch (e) {
@@ -182,17 +195,27 @@
   }
 
   function saveTabHistoryRaw(payload) {
-    if (!Services.sessionStore) {
-      log("SessionStore not available; history save skipped");
-      return;
-    }
     try {
       const tab = getCurrentTab();
       if (!tab) {
         return;
       }
       const json = JSON.stringify(payload);
-      Services.sessionStore.setTabValue(tab, HISTORY_STORAGE_KEY, json);
+
+      // Prefer modern JS SessionStore module if available
+      if (window.SessionStore && typeof window.SessionStore.setCustomTabValue === "function") {
+        window.SessionStore.setCustomTabValue(tab, HISTORY_STORAGE_KEY, json);
+        return;
+      }
+
+      // Fallback: legacy nsISessionStore service
+      try {
+        const legacy = Components.classes["@mozilla.org/browser/sessionstore;1"]
+          .getService(Components.interfaces.nsISessionStore);
+        legacy.setTabValue(tab, HISTORY_STORAGE_KEY, json);
+      } catch (e) {
+        log("SessionStore not available; history save skipped (no JS or legacy API)", e);
+      }
     } catch (e) {
       logWarn("Error saving LLM history to SessionStore:", e);
     }
