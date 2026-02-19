@@ -532,10 +532,19 @@
 
         log("Deleted history session from provider:", providerKey, "session id:", targetId);
 
-        // If no sessions left, clear the list
+        // If no sessions left, return to clean LLM mode (no history list)
         if (!sessions.length) {
-          conversationContainer.textContent = "";
+          if (conversationContainer && conversationContainer.parentNode) {
+            conversationContainer.remove();
+          }
+          conversationContainer = null;
+          conversationHistory = [];
           urlbarInput.setAttribute("placeholder", "Ask anything...");
+          // Hide results area like on first activation with no conversation
+          const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+          if (urlbarViewBodyInner) {
+            urlbarViewBodyInner.style.display = "none";
+          }
         }
       });
 
