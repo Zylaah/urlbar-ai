@@ -171,7 +171,8 @@
       const out = {};
       let n;
       while ((n = converter.readString(8192, out)) > 0) {
-        parts.push(out.value);
+        // Copy string so we don't depend on the implementation reusing the same buffer
+        parts.push(String(out.value));
       }
       converter.close();
       fileStream.close();
@@ -238,7 +239,7 @@
     if (!Array.isArray(data.sessions)) {
       data.sessions = [];
     }
-    if (typeof data.maxSessions !== "number" || data.maxSessions <= 0) {
+    if (typeof data.maxSessions !== "number" || data.maxSessions <= 0 || data.maxSessions < HISTORY_MAX_SESSIONS_PER_PROVIDER) {
       data.maxSessions = HISTORY_MAX_SESSIONS_PER_PROVIDER;
     }
     if (typeof data.version !== "number") {
