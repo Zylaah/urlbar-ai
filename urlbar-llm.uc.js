@@ -84,7 +84,7 @@
   let originalPlaceholder = "";
   let isClickingLink = false; // Track if we're currently clicking a link
   let isSelectingInContainer = false; // Track if user is selecting text in the container
-
+  
   // Suppress/restore the native urlbar blur handler.
   // This follows the same pattern Firefox uses in UrlbarController.focusOnUnifiedSearchButton()
   // to prevent the panel from closing when focus temporarily leaves the input.
@@ -103,6 +103,17 @@
   let currentAssistantMessage = ""; // Track current streaming response
   let currentSearchSources = []; // Track sources used for current response
 
+  // Per-tab conversation history (persisted via SessionStore)
+  const HISTORY_STORAGE_KEY = "urlbar-llm-history";
+  const HISTORY_MAX_SESSIONS_PER_PROVIDER = 20;
+  const HISTORY_MAX_MESSAGES_PER_SESSION = 50;
+  const HISTORY_MAX_TITLE_LENGTH = 120;
+  const HISTORY_MAX_CONTENT_LENGTH = 4000;
+
+  // Runtime navigation state for history browsing (Alt+ArrowUp)
+  let historyIndex = -1; // -1 = live conversation, >= 0 = index in stored sessions
+  let lastHistoryProviderKey = null;
+
   // Get preferences - Direct access to preference service using Components
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
     .getService(Components.interfaces.nsIPrefBranch);
@@ -112,13 +123,277 @@
   
   const scriptLoader = Components.classes["@mozilla.org/moz/jssubscript-loader;1"]
     .getService(Components.interfaces.mozIJSSubScriptLoader);
+
+  // SessionStore for per-tab custom data (may be unavailable in some contexts)
+  const sessionStore = (() => {
+    try {
+      return Components.classes["@mozilla.org/browser/sessionstore;1"]
+        .getService(Components.interfaces.nsISessionStore);
+    } catch (e) {
+      return null;
+    }
+  })();
   
   // Create a minimal Services-like object
   const Services = {
     prefs: prefsService,
     scriptSecurityManager: scriptSecurityManager,
-    scriptloader: scriptLoader
+    scriptloader: scriptLoader,
+    sessionStore
   };
+
+  // ============================================
+  // Tab helpers and SessionStore-backed history
+  // ============================================
+  function getCurrentTab() {
+    try {
+      const topWin = window.top || window;
+      const browser = topWin.gBrowser || topWin.getBrowser?.();
+      return browser?.selectedTab || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function loadTabHistoryRaw() {
+    if (!Services.sessionStore) {
+      return null;
+    }
+    try {
+      const tab = getCurrentTab();
+      if (!tab) {
+        return null;
+      }
+      const value = Services.sessionStore.getTabValue(tab, HISTORY_STORAGE_KEY);
+      if (!value) {
+        return null;
+      }
+      try {
+        return JSON.parse(value);
+      } catch (e) {
+        logWarn("Failed to parse LLM history from SessionStore:", e);
+        return null;
+      }
+    } catch (e) {
+      logWarn("Error loading LLM history from SessionStore:", e);
+      return null;
+    }
+  }
+
+  function saveTabHistoryRaw(payload) {
+    if (!Services.sessionStore) {
+      return;
+    }
+    try {
+      const tab = getCurrentTab();
+      if (!tab) {
+        return;
+      }
+      const json = JSON.stringify(payload);
+      Services.sessionStore.setTabValue(tab, HISTORY_STORAGE_KEY, json);
+    } catch (e) {
+      logWarn("Error saving LLM history to SessionStore:", e);
+    }
+  }
+
+  function getNormalizedHistory() {
+    const data = loadTabHistoryRaw();
+    if (!data || typeof data !== "object") {
+      return { version: 1, maxSessions: HISTORY_MAX_SESSIONS_PER_PROVIDER, sessions: [] };
+    }
+    if (!Array.isArray(data.sessions)) {
+      data.sessions = [];
+    }
+    if (typeof data.maxSessions !== "number" || data.maxSessions <= 0) {
+      data.maxSessions = HISTORY_MAX_SESSIONS_PER_PROVIDER;
+    }
+    if (typeof data.version !== "number") {
+      data.version = 1;
+    }
+    return data;
+  }
+
+  function truncateContent(content) {
+    if (!content || typeof content !== "string") {
+      return "";
+    }
+    if (content.length > HISTORY_MAX_CONTENT_LENGTH) {
+      return content.slice(0, HISTORY_MAX_CONTENT_LENGTH) + "...";
+    }
+    return content;
+  }
+
+  function putSession(session) {
+    const data = getNormalizedHistory();
+    // Prepend newest session
+    data.sessions.unshift(session);
+
+    // Prune oldest sessions per provider beyond maxSessions
+    let countForProvider = 0;
+    data.sessions = data.sessions.filter((s) => {
+      if (s.providerKey !== session.providerKey) {
+        return true;
+      }
+      countForProvider++;
+      if (countForProvider > data.maxSessions) {
+        return false;
+      }
+      return true;
+    });
+
+    saveTabHistoryRaw(data);
+  }
+
+  function getProviderSessions(providerKey) {
+    if (!providerKey) {
+      return [];
+    }
+    const data = getNormalizedHistory();
+    return data.sessions.filter((s) => s && s.providerKey === providerKey);
+  }
+
+  function buildSessionFromConversation(urlbar) {
+    if (!conversationHistory || conversationHistory.length === 0) {
+      return null;
+    }
+
+    const providerKey = urlbar.getAttribute("llm-provider") || (currentProvider && Object.entries(CONFIG.providers).find(([key, p]) => p === currentProvider)?.[0]);
+    if (!providerKey) {
+      return null;
+    }
+
+    // Find first non-empty user message for title
+    let title = "";
+    for (const msg of conversationHistory) {
+      if (msg && msg.role === "user" && msg.content && msg.content.trim()) {
+        title = msg.content.trim();
+        break;
+      }
+    }
+    if (!title) {
+      return null;
+    }
+    if (title.length > HISTORY_MAX_TITLE_LENGTH) {
+      title = title.slice(0, HISTORY_MAX_TITLE_LENGTH) + "...";
+    }
+
+    // Trim messages to last N and truncate long contents
+    const msgs = conversationHistory
+      .slice(-HISTORY_MAX_MESSAGES_PER_SESSION)
+      .map((m) => ({
+        role: m.role,
+        content: truncateContent(m.content)
+      }));
+
+    if (!msgs.length) {
+      return null;
+    }
+
+    const now = Date.now();
+    return {
+      id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+      providerKey,
+      createdAt: now,
+      updatedAt: now,
+      title,
+      messages: msgs
+    };
+  }
+
+  function maybeSaveConversationToHistory(urlbar) {
+    if (!Services.sessionStore) {
+      return;
+    }
+    const session = buildSessionFromConversation(urlbar);
+    if (!session) {
+      return;
+    }
+    putSession(session);
+  }
+
+  function renderUserMessageFromHistory(message) {
+    if (!conversationContainer || !conversationContainer.parentNode) {
+      conversationContainer = createConversationContainer();
+      if (!conversationContainer) {
+        return;
+      }
+    }
+    const messageDiv = document.createElement("div");
+    messageDiv.className = "llm-message llm-message-user";
+    messageDiv.textContent = message;
+    conversationContainer.appendChild(messageDiv);
+  }
+
+  function renderAssistantMessageFromHistory(message) {
+    if (!conversationContainer || !conversationContainer.parentNode) {
+      conversationContainer = createConversationContainer();
+      if (!conversationContainer) {
+        return;
+      }
+    }
+
+    const messageDiv = document.createElement("div");
+    messageDiv.className = "llm-message llm-message-assistant";
+
+    const contentDiv = document.createElement("div");
+    contentDiv.className = "llm-message-content";
+
+    renderMarkdownToElement(message, contentDiv);
+
+    messageDiv.appendChild(contentDiv);
+    conversationContainer.appendChild(messageDiv);
+  }
+
+  function loadSessionIntoCurrentConversation(session, urlbar, urlbarInput) {
+    if (!session || !Array.isArray(session.messages)) {
+      return;
+    }
+
+    // Abort any in-flight request and clear streaming row
+    if (abortController) {
+      try {
+        abortController.abort();
+      } catch (e) {}
+      abortController = null;
+    }
+    if (streamingResultRow) {
+      streamingResultRow.remove();
+      streamingResultRow = null;
+    }
+
+    // Reset conversation container
+    if (conversationContainer && conversationContainer.parentNode) {
+      conversationContainer.remove();
+    }
+    conversationContainer = createConversationContainer();
+    if (!conversationContainer) {
+      return;
+    }
+
+    // Replace in-memory history
+    conversationHistory = session.messages.map((m) => ({
+      role: m.role,
+      content: m.content
+    }));
+
+    // Render messages
+    for (const msg of conversationHistory) {
+      if (!msg || !msg.content) {
+        continue;
+      }
+      if (msg.role === "user") {
+        renderUserMessageFromHistory(msg.content);
+      } else if (msg.role === "assistant") {
+        renderAssistantMessageFromHistory(msg.content);
+      }
+    }
+
+    // Ensure LLM mode visuals are active
+    urlbar.setAttribute("llm-mode-active", "true");
+    urlbar.setAttribute("llm-provider", session.providerKey);
+    urlbarInput.setAttribute("placeholder", "Ask a follow-up...");
+    urlbarInput.focus();
+  }
 
   // ============================================
   // Load Mozilla Readability for content extraction
@@ -457,8 +732,38 @@ Do NOT explain. Just reply with one word.`
           
           // Display user message and send to LLM
           displayUserMessage(query);
+          // Reset history navigation when sending a new message
+          historyIndex = -1;
+          lastHistoryProviderKey = urlbar.getAttribute("llm-provider") || null;
           sendToLLM(urlbar, urlbarInput, query);
         }
+      } else if (isLLMMode && e.altKey && e.key === "ArrowUp") {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const providerKey = urlbar.getAttribute("llm-provider");
+        if (!providerKey) {
+          return;
+        }
+
+        // Load stored sessions for this provider
+        const sessions = getProviderSessions(providerKey);
+        if (!sessions.length) {
+          return;
+        }
+
+        // Reset index when switching providers
+        if (lastHistoryProviderKey !== providerKey) {
+          historyIndex = -1;
+          lastHistoryProviderKey = providerKey;
+        }
+
+        if (historyIndex < sessions.length - 1) {
+          historyIndex++;
+        }
+
+        const session = sessions[historyIndex];
+        loadSessionIntoCurrentConversation(session, urlbar, urlbarInput);
       } else if (e.key === "Escape" && isLLMMode) {
         e.preventDefault();
         e.stopPropagation();
@@ -1759,6 +2064,9 @@ Provide a direct, informative answer with citations:`;
   }
 
   function deactivateLLMMode(urlbar, urlbarInput, restoreURL = false) {
+    // Persist the current conversation (if any) before clearing state
+    maybeSaveConversationToHistory(urlbar);
+
     isLLMMode = false;
     currentProvider = null;
     currentQuery = "";
@@ -1776,6 +2084,8 @@ Provide a direct, informative answer with citations:`;
     // Clear any partial assistant state and search sources
     currentAssistantMessage = "";
     currentSearchSources = [];
+    historyIndex = -1;
+    lastHistoryProviderKey = null;
     
     // Always restore native blur handler and clear interaction flags on deactivation
     isClickingLink = false;
