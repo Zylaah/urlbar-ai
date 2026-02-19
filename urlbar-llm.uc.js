@@ -193,15 +193,21 @@
     if (!file) return;
     try {
       const json = JSON.stringify(payload);
+      const parent = file.parent;
+      if (!parent) return;
+      const tempFile = parent.clone();
+      tempFile.append(HISTORY_FILE_NAME + ".tmp");
       const fileStream = Components.classes["@mozilla.org/network/file-output-stream;1"]
         .createInstance(Components.interfaces.nsIFileOutputStream);
-      fileStream.init(file, 0x02 | 0x08 | 0x20, 0o664, 0);
+      fileStream.init(tempFile, 0x02 | 0x08 | 0x20, 0o664, 0);
       const converter = Components.classes["@mozilla.org/intl/converter-output-stream;1"]
         .createInstance(Components.interfaces.nsIConverterOutputStream);
       converter.init(fileStream, "UTF-8", 0, 0);
       converter.writeString(json);
       converter.close();
       fileStream.close();
+      if (file.exists()) file.remove();
+      tempFile.moveTo(parent, HISTORY_FILE_NAME);
       log("Saved LLM history to profile file");
     } catch (e) {
       logWarn("Error writing LLM history to profile file:", e);
@@ -2097,11 +2103,25 @@ Provide a direct, informative answer with citations:`;
       marker.dataset.url = source.url;
       marker.title = source.title || source.source || source.url;
       const domain = domainForFavicon(source);
+      if (!domain) return;
+      const enc = encodeURIComponent(domain);
+      const urls = [
+        `https://www.google.com/s2/favicons?domain=${enc}&sz=32`,
+        `https://icons.duckduckgo.com/ip3/${enc}.ico`
+      ];
       const img = document.createElement('img');
       img.className = 'llm-citation-favicon';
-      img.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+      let urlIndex = 0;
+      img.src = urls[0];
       img.alt = '';
-      img.onerror = () => { img.style.display = 'none'; };
+      img.onerror = () => {
+        urlIndex++;
+        if (urlIndex < urls.length) {
+          img.src = urls[urlIndex];
+        } else {
+          img.style.display = 'none';
+        }
+      };
       marker.appendChild(img);
     });
   }
@@ -2737,9 +2757,11 @@ Provide a direct, informative answer with citations:`;
       
       log("Conversation now has", conversationHistory.length, "messages");
       
-      // Inject favicons into citation markers (no separate source section)
+      // Inject favicons only after streaming is complete and final DOM is rendered (deferred so no debounce can overwrite)
       if (currentSearchSources && currentSearchSources.length > 0) {
-        injectFaviconsIntoCitationMarkers(streamingResultRow, currentSearchSources);
+        setTimeout(() => {
+          injectFaviconsIntoCitationMarkers(streamingResultRow, currentSearchSources);
+        }, LIMITS.RENDER_DEBOUNCE + 20);
       }
 
       // Persist conversation after each assistant response (and on deactivate)
@@ -2815,17 +2837,26 @@ Provide a direct, informative answer with citations:`;
 
     // Debounced rendering: batch rapid token updates into a single render pass
     let renderPending = false;
+    let renderTimeoutId = null;
     const scheduleRender = () => {
       if (renderPending) return;
       renderPending = true;
-      setTimeout(() => {
+      renderTimeoutId = setTimeout(() => {
         renderPending = false;
+        renderTimeoutId = null;
         renderMarkdownToElement(accumulatedText, titleElement);
         const scrollContainer = document.querySelector(".urlbarView-body-inner");
         if (scrollContainer) {
           scrollContainer.scrollTop = scrollContainer.scrollHeight;
         }
       }, LIMITS.RENDER_DEBOUNCE);
+    };
+    const cancelPendingRender = () => {
+      if (renderTimeoutId !== null) {
+        clearTimeout(renderTimeoutId);
+        renderTimeoutId = null;
+        renderPending = false;
+      }
     };
 
     /**
@@ -2855,7 +2886,7 @@ Provide a direct, informative answer with citations:`;
         if (trimmed.startsWith("data: ")) {
           const data = trimmed.slice(6);
           if (data === "[DONE]") {
-            // Final render with full text
+            cancelPendingRender();
             renderMarkdownToElement(accumulatedText, titleElement);
             return;
           }
@@ -2879,6 +2910,7 @@ Provide a direct, informative answer with citations:`;
               scheduleRender();
             }
             if (streamDone) {
+              cancelPendingRender();
               renderMarkdownToElement(accumulatedText, titleElement);
               return;
             }
@@ -2887,7 +2919,7 @@ Provide a direct, informative answer with citations:`;
       }
     }
 
-    // Ensure final state is rendered
+    cancelPendingRender();
     renderMarkdownToElement(accumulatedText, titleElement);
   }
 
