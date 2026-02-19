@@ -853,7 +853,7 @@
   box-shadow: none;
 }
 
-/* Open – primary accent to match Zen/urlbar pill */
+/* Open – base fallback when provider not set */
 .llm-conversation-container .llm-history-open-button {
   background: color-mix(in srgb, var(--zen-primary-color, #5b8def) 12%, light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08)));
   border-color: color-mix(in srgb, var(--zen-primary-color, #5b8def) 28%, light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12)));
@@ -863,6 +863,43 @@
 .llm-conversation-container .llm-history-open-button:hover {
   background: color-mix(in srgb, var(--zen-primary-color, #5b8def) 20%, light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12)));
   border-color: color-mix(in srgb, var(--zen-primary-color, #5b8def) 40%, light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2)));
+}
+
+/* Open button – provider pill color variants (history list is shown per-provider) */
+#urlbar[llm-provider="mistral"] .llm-history-open-button {
+  background: color-mix(in srgb, rgb(250, 80, 15) 12%, light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08)));
+  border-color: color-mix(in srgb, rgb(250, 80, 15) 28%, light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12)));
+}
+#urlbar[llm-provider="mistral"] .llm-history-open-button:hover {
+  background: color-mix(in srgb, rgb(250, 80, 15) 20%, light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12)));
+  border-color: color-mix(in srgb, rgb(250, 80, 15) 40%, light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2)));
+}
+
+#urlbar[llm-provider="openai"] .llm-history-open-button {
+  background: color-mix(in srgb, #10a37f 12%, light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08)));
+  border-color: color-mix(in srgb, #10a37f 28%, light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12)));
+}
+#urlbar[llm-provider="openai"] .llm-history-open-button:hover {
+  background: color-mix(in srgb, #10a37f 20%, light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12)));
+  border-color: color-mix(in srgb, #10a37f 40%, light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2)));
+}
+
+#urlbar[llm-provider="ollama"] .llm-history-open-button {
+  background: color-mix(in srgb, #888 12%, light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08)));
+  border-color: color-mix(in srgb, #888 28%, light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12)));
+}
+#urlbar[llm-provider="ollama"] .llm-history-open-button:hover {
+  background: color-mix(in srgb, #888 20%, light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12)));
+  border-color: color-mix(in srgb, #888 40%, light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2)));
+}
+
+#urlbar[llm-provider="gemini"] .llm-history-open-button {
+  background: color-mix(in srgb, #4285f4 12%, light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08)));
+  border-color: color-mix(in srgb, #4285f4 28%, light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12)));
+}
+#urlbar[llm-provider="gemini"] .llm-history-open-button:hover {
+  background: color-mix(in srgb, #4285f4 20%, light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12)));
+  border-color: color-mix(in srgb, #4285f4 40%, light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2)));
 }
 
 /* Delete – soft danger, same shape and motion */
