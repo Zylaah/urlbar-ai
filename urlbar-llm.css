@@ -827,45 +827,56 @@
   gap: 6px;
 }
 
-/* Base button style */
+/* Base button style – aligned with source pills and list items */
 .llm-conversation-container .llm-history-button {
-  font-size: 10px;
-  line-height: 1.5;
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  background-color: color-mix(in srgb, currentColor 6%, transparent);
-  color: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12));
+  background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08));
+  color: light-dark(rgba(0, 0, 0, 0.85), rgba(255, 255, 255, 0.9));
   cursor: pointer;
   -moz-appearance: none;
   appearance: none;
-  transition:
-    background-color 120ms ease-out,
-    border-color 120ms ease-out,
-    transform 80ms ease-out;
+  transition: all 0.15s ease;
 }
 
 .llm-conversation-container .llm-history-button:hover {
-  background-color: color-mix(in srgb, currentColor 12%, transparent);
+  background: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.15));
+  border-color: light-dark(rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.25));
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.25));
 }
 
 .llm-conversation-container .llm-history-button:active {
-  transform: scale(0.97);
+  transform: translateY(0);
+  box-shadow: none;
 }
 
-/* Open = primary / subtle */
+/* Open – primary accent to match Zen/urlbar pill */
 .llm-conversation-container .llm-history-open-button {
-  border-color: color-mix(in srgb, currentColor 18%, transparent);
+  background: color-mix(in srgb, var(--zen-primary-color, #5b8def) 12%, light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08)));
+  border-color: color-mix(in srgb, var(--zen-primary-color, #5b8def) 28%, light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12)));
+  color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.95));
 }
 
-/* Delete = danger accent */
+.llm-conversation-container .llm-history-open-button:hover {
+  background: color-mix(in srgb, var(--zen-primary-color, #5b8def) 20%, light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12)));
+  border-color: color-mix(in srgb, var(--zen-primary-color, #5b8def) 40%, light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2)));
+}
+
+/* Delete – soft danger, same shape and motion */
 .llm-conversation-container .llm-history-delete-button {
-  background-color: color-mix(in srgb, red 18%, transparent);
-  border-color: color-mix(in srgb, red 32%, transparent);
+  background: color-mix(in srgb, #c62828 10%, light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08)));
+  border-color: color-mix(in srgb, #c62828 22%, light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12)));
+  color: light-dark(rgba(0.6, 0, 0, 0.95), rgba(255, 200, 200, 0.95));
 }
 
 .llm-conversation-container .llm-history-delete-button:hover {
-  background-color: color-mix(in srgb, red 26%, transparent);
+  background: color-mix(in srgb, #c62828 18%, light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12)));
+  border-color: color-mix(in srgb, #c62828 35%, light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2)));
 }
 
 /* Scrollbar tuning inside the history list */
