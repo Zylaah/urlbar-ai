@@ -157,15 +157,22 @@
       return null;
     }
     try {
-      const stream = Components.classes["@mozilla.org/network/file-input-stream;1"]
+      const fileStream = Components.classes["@mozilla.org/network/file-input-stream;1"]
         .createInstance(Components.interfaces.nsIFileInputStream);
-      stream.init(file, 0x01, 0, 0);
-      const scriptable = Components.classes["@mozilla.org/scriptableinputstream;1"]
-        .createInstance(Components.interfaces.nsIScriptableInputStream);
-      scriptable.init(stream);
-      const str = scriptable.read(scriptable.available());
-      scriptable.close();
-      stream.close();
+      fileStream.init(file, 0x01, 0, 0);
+      const Ci = Components.interfaces;
+      const converter = Components.classes["@mozilla.org/intl/converter-input-stream;1"]
+        .createInstance(Ci.nsIConverterInputStream);
+      converter.init(fileStream, "UTF-8", 8192, Ci.nsIConverterInputStream.DEFAULT_REPLACEMENT_CHARACTER);
+      const parts = [];
+      const out = {};
+      let n;
+      while ((n = converter.readString(8192, out)) > 0) {
+        parts.push(out.value);
+      }
+      converter.close();
+      fileStream.close();
+      const str = parts.join("");
       if (!str) return null;
       const data = JSON.parse(str);
       log("Loaded LLM history from profile file");
@@ -181,11 +188,15 @@
     if (!file) return;
     try {
       const json = JSON.stringify(payload);
-      const stream = Components.classes["@mozilla.org/network/file-output-stream;1"]
+      const fileStream = Components.classes["@mozilla.org/network/file-output-stream;1"]
         .createInstance(Components.interfaces.nsIFileOutputStream);
-      stream.init(file, 0x02 | 0x08 | 0x20, 0o664, 0);
-      stream.write(json, json.length);
-      stream.close();
+      fileStream.init(file, 0x02 | 0x08 | 0x20, 0o664, 0);
+      const converter = Components.classes["@mozilla.org/intl/converter-output-stream;1"]
+        .createInstance(Components.interfaces.nsIConverterOutputStream);
+      converter.init(fileStream, "UTF-8", 0, 0);
+      converter.writeString(json);
+      converter.close();
+      fileStream.close();
       log("Saved LLM history to profile file");
     } catch (e) {
       logWarn("Error writing LLM history to profile file:", e);
