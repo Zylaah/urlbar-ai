@@ -307,13 +307,21 @@
       title = title.slice(0, HISTORY_MAX_TITLE_LENGTH) + "...";
     }
 
-    // Trim messages to last N and truncate long contents
+    // Trim messages to last N and truncate long contents; keep sources for assistant messages
     const msgs = conversationHistory
       .slice(-HISTORY_MAX_MESSAGES_PER_SESSION)
-      .map((m) => ({
-        role: m.role,
-        content: truncateContent(m.content)
-      }));
+      .map((m) => {
+        const out = { role: m.role, content: truncateContent(m.content) };
+        if (m.role === "assistant" && m.sources && m.sources.length > 0) {
+          out.sources = m.sources.map((s) => ({
+            title: s.title,
+            url: s.url,
+            source: s.source,
+            index: s.index
+          }));
+        }
+        return out;
+      });
 
     if (!msgs.length) {
       return null;
@@ -352,7 +360,7 @@
     conversationContainer.appendChild(messageDiv);
   }
 
-  function renderAssistantMessageFromHistory(message) {
+  function renderAssistantMessageFromHistory(message, sources) {
     if (!conversationContainer || !conversationContainer.parentNode) {
       conversationContainer = createConversationContainer();
       if (!conversationContainer) {
@@ -369,6 +377,9 @@
     renderMarkdownToElement(message, contentDiv);
 
     messageDiv.appendChild(contentDiv);
+    if (sources && sources.length > 0) {
+      displaySourcePills(messageDiv, sources);
+    }
     conversationContainer.appendChild(messageDiv);
   }
 
@@ -398,11 +409,14 @@
       return;
     }
 
-    // Replace in-memory history
-    conversationHistory = session.messages.map((m) => ({
-      role: m.role,
-      content: m.content
-    }));
+    // Replace in-memory history (keep sources for assistant messages)
+    conversationHistory = session.messages.map((m) => {
+      const out = { role: m.role, content: m.content };
+      if (m.role === "assistant" && m.sources && m.sources.length > 0) {
+        out.sources = m.sources;
+      }
+      return out;
+    });
 
     // Render messages
     for (const msg of conversationHistory) {
@@ -412,7 +426,7 @@
       if (msg.role === "user") {
         renderUserMessageFromHistory(msg.content);
       } else if (msg.role === "assistant") {
-        renderAssistantMessageFromHistory(msg.content);
+        renderAssistantMessageFromHistory(msg.content, msg.sources);
       }
     }
 
@@ -2739,11 +2753,20 @@ Provide a direct, informative answer with citations:`;
       
       await streamResponse(messagesToSend, titleElement, abortController.signal);
       
-      // Add assistant's response to conversation history
-      conversationHistory.push({
+      // Add assistant's response to conversation history (include sources for history/session store)
+      const assistantEntry = {
         role: "assistant",
         content: currentAssistantMessage
-      });
+      };
+      if (currentSearchSources && currentSearchSources.length > 0) {
+        assistantEntry.sources = currentSearchSources.map((s) => ({
+          title: s.title,
+          url: s.url,
+          source: s.source,
+          index: s.index
+        }));
+      }
+      conversationHistory.push(assistantEntry);
       
       log("Conversation now has", conversationHistory.length, "messages");
       
