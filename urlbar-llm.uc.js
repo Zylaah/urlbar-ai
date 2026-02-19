@@ -423,6 +423,80 @@
     urlbarInput.focus();
   }
 
+  function showHistoryListForProvider(providerKey, urlbar, urlbarInput) {
+    const sessions = getProviderSessions(providerKey);
+    if (!sessions.length) {
+      log("No stored LLM history sessions to show for provider:", providerKey);
+      return;
+    }
+
+    // Ensure we have a container
+    if (conversationContainer && conversationContainer.parentNode) {
+      conversationContainer.remove();
+    }
+    conversationContainer = createConversationContainer();
+    if (!conversationContainer) {
+      return;
+    }
+
+    // History list root
+    const listRoot = document.createElement("div");
+    listRoot.className = "llm-history-list";
+
+    const header = document.createElement("div");
+    header.className = "llm-history-list-header";
+    header.textContent = "Previous conversations";
+    listRoot.appendChild(header);
+
+    sessions.forEach((session, index) => {
+      const item = document.createElement("div");
+      item.className = "llm-history-list-item";
+      item.setAttribute("data-session-index", String(index));
+
+      const title = document.createElement("div");
+      title.className = "llm-history-list-title";
+      title.textContent = session.title || "(untitled conversation)";
+      item.appendChild(title);
+
+      if (session.updatedAt || session.createdAt) {
+        const subtitle = document.createElement("div");
+        subtitle.className = "llm-history-list-subtitle";
+        const ts = session.updatedAt || session.createdAt;
+        try {
+          subtitle.textContent = new Date(ts).toLocaleString();
+        } catch (e) {
+          subtitle.textContent = "";
+        }
+        item.appendChild(subtitle);
+      }
+
+      item.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const idxAttr = item.getAttribute("data-session-index");
+        const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
+        if (!Number.isFinite(idx) || idx < 0 || idx >= sessions.length) {
+          return;
+        }
+        historyIndex = idx;
+        lastHistoryProviderKey = providerKey;
+        const selected = sessions[idx];
+        log("History list item clicked, loading session index", idx, "for provider:", providerKey);
+        loadSessionIntoCurrentConversation(selected, urlbar, urlbarInput);
+      });
+
+      listRoot.appendChild(item);
+    });
+
+    conversationContainer.appendChild(listRoot);
+
+    // Ensure LLM mode visuals and focus
+    urlbar.setAttribute("llm-mode-active", "true");
+    urlbar.setAttribute("llm-provider", providerKey);
+    urlbarInput.setAttribute("placeholder", "Select a conversation or ask a new question...");
+    urlbarInput.focus();
+  }
+
   // ============================================
   // Load Mozilla Readability for content extraction
   // ============================================
@@ -782,19 +856,8 @@ Do NOT explain. Just reply with one word.`
           return;
         }
 
-        // Reset index when switching providers
-        if (lastHistoryProviderKey !== providerKey) {
-          historyIndex = -1;
-          lastHistoryProviderKey = providerKey;
-        }
-
-        if (historyIndex < sessions.length - 1) {
-          historyIndex++;
-        }
-
-        const session = sessions[historyIndex];
-        log("Alt+ArrowUp loading history session", historyIndex + 1, "of", sessions.length, "for provider:", providerKey);
-        loadSessionIntoCurrentConversation(session, urlbar, urlbarInput);
+        log("Alt+ArrowUp showing history list for provider:", providerKey, "with", sessions.length, "sessions");
+        showHistoryListForProvider(providerKey, urlbar, urlbarInput);
       } else if (e.key === "Escape" && isLLMMode) {
         e.preventDefault();
         e.stopPropagation();
