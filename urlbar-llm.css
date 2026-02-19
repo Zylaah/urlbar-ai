@@ -632,80 +632,86 @@
 
 /* ============================================
    Conversation history list (Alt+ArrowUp)
+   Matches native Zen urlbar suggestions styling
    ============================================ */
 
-/* History list container */
+/* History list container – same as #urlbar-results */
 .llm-conversation-container .llm-history-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 6px 8px 14px;
+  gap: var(--urlbarView-row-gutter, 2px);
+  padding: var(--urlbarView-results-padding, 8px);
+  padding-bottom: calc(var(--urlbarView-results-padding, 8px) + 6px);
   max-height: 260px;
   overflow-y: auto;
+  scrollbar-width: none;
   box-sizing: border-box;
 }
 
-/* Header */
+.llm-conversation-container .llm-history-list::-webkit-scrollbar {
+  width: 0;
+  display: none;
+}
+
+/* Header – subtle, like Zen section labels */
 .llm-conversation-container .llm-history-list-header {
-  font-size: 11px;
+  font-size: var(--urlbarView-small-font-size, 0.85em);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  opacity: 0.7;
-  padding: 2px 4px 4px;
+  opacity: 0.65;
+  padding-block: 2px 4px;
+  padding-inline: var(--urlbarView-item-inline-padding, 8px);
 }
 
-/* Individual item */
+/* Individual item – matches .urlbarView-row sizing and hover */
 .llm-conversation-container .llm-history-list-item {
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background-color: color-mix(in srgb, currentColor 5%, transparent);
-  border: 1px solid color-mix(in srgb, currentColor 8%, transparent);
+  gap: var(--urlbarView-item-inline-padding, 8px);
+  min-height: 32px;
+  padding-block: var(--urlbarView-item-block-padding, 10px);
+  padding-inline: var(--urlbarView-item-inline-padding, 8px);
+  border-radius: calc(var(--toolbarbutton-border-radius, 4px) - 2px);
+  color: light-dark(rgba(0, 0, 0, 0.7), rgba(255, 255, 255, 0.7)) !important;
   cursor: default;
-  transition:
-    background-color 120ms ease-out,
-    border-color 120ms ease-out,
-    box-shadow 120ms ease-out;
+  transition: background-color 120ms ease-out;
 }
 
 .llm-conversation-container .llm-history-list-item:hover {
-  background-color: color-mix(in srgb, currentColor 9%, transparent);
-  border-color: color-mix(in srgb, currentColor 16%, transparent);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  background-color: color-mix(in srgb, var(--zen-branding-bg-reverse, var(--zen-primary-color, #5b8def)) 5%, transparent 95%) !important;
 }
 
-/* Title with timestamp under it */
+/* Title with timestamp */
 .llm-conversation-container .llm-history-list-meta {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 2px;
+  justify-content: center;
+  gap: 1px;
 }
 
-/* Title */
+/* Title – same as .urlbarView-title */
 .llm-conversation-container .llm-history-list-title {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px !important;
+  font-weight: 500 !important;
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Timestamp */
+/* Timestamp – secondary like Zen */
 .llm-conversation-container .llm-history-list-subtitle {
-  font-size: 10px;
-  opacity: 0.65;
+  font-size: var(--urlbarView-small-font-size, 0.85em);
+  opacity: 0.7;
   white-space: nowrap;
 }
 
-/* Actions row */
+/* Actions row – Open/Delete buttons */
 .llm-conversation-container .llm-history-list-actions {
   flex-shrink: 0;
   display: flex;
@@ -714,14 +720,14 @@
   gap: 6px;
 }
 
-/* Base button style – aligned with source pills and list items */
+/* Base button style – compact to match row height */
 .llm-conversation-container .llm-history-button {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
-  line-height: 1.4;
-  padding: 5px 12px;
+  line-height: 1.3;
+  padding: 4px 10px;
   border-radius: 4px;
-  border: 1px solid light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12));
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.12), rgba(255, 255, 255, 0.15));
   background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08));
   color: light-dark(rgba(0, 0, 0, 0.85), rgba(255, 255, 255, 0.9));
   cursor: pointer;
@@ -799,14 +805,4 @@
 .llm-conversation-container .llm-history-delete-button:hover {
   background: color-mix(in srgb, #c62828 18%, light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12)));
   border-color: color-mix(in srgb, #c62828 35%, light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2)));
-}
-
-/* Scrollbar tuning inside the history list */
-.llm-conversation-container .llm-history-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.llm-conversation-container .llm-history-list::-webkit-scrollbar-thumb {
-  background-color: color-mix(in srgb, currentColor 25%, transparent);
-  border-radius: 999px;
 }
