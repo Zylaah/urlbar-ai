@@ -368,6 +368,8 @@
       return;
     }
     putSession(session);
+    // So the next save (e.g. on deactivate) updates this session instead of adding a duplicate
+    currentSessionId = session.id;
   }
 
   function renderUserMessageFromHistory(message) {
