@@ -157,6 +157,7 @@
 
   function loadTabHistoryRaw() {
     if (!Services.sessionStore) {
+      log("SessionStore not available; history load skipped");
       return null;
     }
     try {
@@ -182,6 +183,7 @@
 
   function saveTabHistoryRaw(payload) {
     if (!Services.sessionStore) {
+      log("SessionStore not available; history save skipped");
       return;
     }
     try {
@@ -199,6 +201,7 @@
   function getNormalizedHistory() {
     const data = loadTabHistoryRaw();
     if (!data || typeof data !== "object") {
+      log("No existing LLM history found in SessionStore");
       return { version: 1, maxSessions: HISTORY_MAX_SESSIONS_PER_PROVIDER, sessions: [] };
     }
     if (!Array.isArray(data.sessions)) {
@@ -224,6 +227,7 @@
   }
 
   function putSession(session) {
+    log("Saving LLM conversation session to history for provider:", session.providerKey);
     const data = getNormalizedHistory();
     // Prepend newest session
     data.sessions.unshift(session);
@@ -254,11 +258,13 @@
 
   function buildSessionFromConversation(urlbar) {
     if (!conversationHistory || conversationHistory.length === 0) {
+      log("Skipped building history session: empty conversationHistory");
       return null;
     }
 
     const providerKey = urlbar.getAttribute("llm-provider") || (currentProvider && Object.entries(CONFIG.providers).find(([key, p]) => p === currentProvider)?.[0]);
     if (!providerKey) {
+      log("Skipped building history session: missing providerKey");
       return null;
     }
 
@@ -271,6 +277,7 @@
       }
     }
     if (!title) {
+      log("Skipped building history session: no non-empty user message found");
       return null;
     }
     if (title.length > HISTORY_MAX_TITLE_LENGTH) {
@@ -302,10 +309,12 @@
 
   function maybeSaveConversationToHistory(urlbar) {
     if (!Services.sessionStore) {
+      log("History not saved: SessionStore unavailable");
       return;
     }
     const session = buildSessionFromConversation(urlbar);
     if (!session) {
+      log("History not saved: no session built from conversation");
       return;
     }
     putSession(session);
@@ -743,12 +752,14 @@ Do NOT explain. Just reply with one word.`
 
         const providerKey = urlbar.getAttribute("llm-provider");
         if (!providerKey) {
+          log("Alt+ArrowUp pressed but no providerKey on urlbar");
           return;
         }
 
         // Load stored sessions for this provider
         const sessions = getProviderSessions(providerKey);
         if (!sessions.length) {
+          log("Alt+ArrowUp pressed but no stored sessions for provider:", providerKey);
           return;
         }
 
@@ -763,6 +774,7 @@ Do NOT explain. Just reply with one word.`
         }
 
         const session = sessions[historyIndex];
+        log("Alt+ArrowUp loading history session", historyIndex + 1, "of", sessions.length, "for provider:", providerKey);
         loadSessionIntoCurrentConversation(session, urlbar, urlbarInput);
       } else if (e.key === "Escape" && isLLMMode) {
         e.preventDefault();
