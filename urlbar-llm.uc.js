@@ -17,6 +17,9 @@
   "use strict";
 
   // Timing and size limits (centralized constants)
+  /** System instruction so the LLM responds in the same language as the user's message */
+  const LANGUAGE_SYSTEM_INSTRUCTION = "Always respond in the same language the user used for their message. If the user writes in French, respond in French; if in Spanish, in Spanish; and so on.";
+
   const LIMITS = {
     CACHE_TTL: 30 * 60 * 1000,       // 30 minutes
     MAX_CACHE_SIZE: 50,               // Max cached search results
@@ -1364,7 +1367,6 @@ Do NOT explain. Just reply with one word.`
   /**
    * Web search using DuckDuckGo HTML
    * In Firefox chrome context, we have elevated privileges and can fetch directly
-   * Based on the approach used in Hana browser extension
    */
   
   // Search results cache (LRU-style with size limit)
@@ -2697,20 +2699,20 @@ Provide a direct, informative answer with citations:`;
       // Clear spinner and show thinking text
       titleElement.textContent = "Thinking...";
       
-      // Prepare messages with search context if available
-      let messagesToSend = conversationHistory;
+      // Prepare messages: language instruction first, then conversation (and search context if any)
+      const languageSystemMessage = { role: "system", content: LANGUAGE_SYSTEM_INSTRUCTION };
+      let messagesToSend;
       if (searchContext) {
-        // Insert search context as a system message before the last user message
         const lastUserMessageIndex = conversationHistory.length - 1;
         messagesToSend = [
+          languageSystemMessage,
           ...conversationHistory.slice(0, lastUserMessageIndex),
-          {
-            role: "system",
-            content: searchContext
-          },
+          { role: "system", content: searchContext },
           conversationHistory[lastUserMessageIndex]
         ];
         log('Added web search context to messages');
+      } else {
+        messagesToSend = [ languageSystemMessage, ...conversationHistory ];
       }
       
       await streamResponse(messagesToSend, titleElement, abortController.signal);
