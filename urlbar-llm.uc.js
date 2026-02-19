@@ -331,10 +331,6 @@
   }
 
   function maybeSaveConversationToHistory(urlbar) {
-    if (!Services.sessionStore) {
-      log("History not saved: SessionStore unavailable");
-      return;
-    }
     const session = buildSessionFromConversation(urlbar);
     if (!session) {
       log("History not saved: no session built from conversation");
