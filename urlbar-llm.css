@@ -771,8 +771,9 @@
 /* Individual item */
 .llm-conversation-container .llm-history-list-item {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
   padding: 6px 8px;
   border-radius: 6px;
   background-color: color-mix(in srgb, currentColor 5%, transparent);
@@ -792,6 +793,8 @@
 
 /* Title with timestamp under it */
 .llm-conversation-container .llm-history-list-meta {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -817,7 +820,9 @@
 
 /* Actions row */
 .llm-conversation-container .llm-history-list-actions {
+  flex-shrink: 0;
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 6px;
 }
