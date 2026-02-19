@@ -790,12 +790,12 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
-/* Title + timestamp row */
+/* Title with timestamp under it */
 .llm-conversation-container .llm-history-list-meta {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
 }
 
 /* Title */

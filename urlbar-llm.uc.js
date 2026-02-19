@@ -2834,6 +2834,9 @@ Provide a direct, informative answer with citations:`;
         displaySourcePills(streamingResultRow, currentSearchSources);
       }
 
+      // Persist conversation after each assistant response (and on deactivate)
+      maybeSaveConversationToHistory(urlbar);
+
       urlbar.removeAttribute("is-llm-thinking");
     } catch (error) {
       if (error.name === "AbortError") {
