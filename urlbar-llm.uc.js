@@ -946,9 +946,11 @@ Do NOT explain. Just reply with one word.`
         // Send query to LLM (follow-up or new)
         const query = currentQuery;
         if (query.trim()) {
-          // If history list is visible, clear it so we show the new conversation
-          if (isShowingHistoryList()) {
+          // If history list is visible, we're starting a new conversation (not opening one); clear list and session id
+          const wasShowingHistoryList = isShowingHistoryList();
+          if (wasShowingHistoryList) {
             conversationContainer.innerHTML = "";
+            currentSessionId = null;
           }
 
           // Add user message to conversation
@@ -969,7 +971,6 @@ Do NOT explain. Just reply with one word.`
           // Reset history navigation when sending a new message
           historyIndex = -1;
           lastHistoryProviderKey = urlbar.getAttribute("llm-provider") || null;
-          currentSessionId = null;
           sendToLLM(urlbar, urlbarInput, query);
         }
       } else if (isLLMMode && e.altKey && e.key === "ArrowDown") {
