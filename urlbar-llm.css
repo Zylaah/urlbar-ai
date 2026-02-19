@@ -804,7 +804,7 @@
 /* Title */
 .llm-conversation-container .llm-history-list-title {
   font-size: 15px;
-  font-weight: 700;
+  font-weight: 600;
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
