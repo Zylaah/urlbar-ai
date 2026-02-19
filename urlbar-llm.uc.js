@@ -139,78 +139,171 @@
   };
 
   // ============================================
-  // Global conversation history (profile file)
+  // Global conversation history (IndexedDB)
   // ============================================
-  function getProfileHistoryFile() {
+  const HISTORY_DB_NAME = "urlbar-llm-history";
+  const HISTORY_DB_VERSION = 1;
+  const HISTORY_STORE_NAME = "sessions";
+
+  function openHistoryDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(HISTORY_DB_NAME, HISTORY_DB_VERSION);
+      req.onerror = () => reject(req.error);
+      req.onsuccess = () => resolve(req.result);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(HISTORY_STORE_NAME)) {
+          const store = db.createObjectStore(HISTORY_STORE_NAME, { keyPath: "id" });
+          store.createIndex("providerKey", "providerKey", { unique: false });
+          store.createIndex("providerUpdated", ["providerKey", "updatedAt"], { unique: false });
+        }
+      };
+    });
+  }
+
+  /** Get all sessions for a provider, newest first */
+  function getProviderSessions(providerKey) {
+    return new Promise((resolve, reject) => {
+      if (!providerKey) {
+        resolve([]);
+        return;
+      }
+      openHistoryDB().then((db) => {
+        const tx = db.transaction(HISTORY_STORE_NAME, "readonly");
+        const store = tx.objectStore(HISTORY_STORE_NAME);
+        const index = store.index("providerKey");
+        const req = index.getAll(IDBKeyRange.only(providerKey));
+        req.onsuccess = () => {
+          const sessions = (req.result || []).filter((s) => s && s.providerKey === providerKey);
+          sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+          db.close();
+          log("Loaded LLM history from IndexedDB");
+          resolve(sessions);
+        };
+        req.onerror = () => {
+          db.close();
+          reject(req.error);
+        };
+      }).catch(reject);
+    });
+  }
+
+  /** Save or update a session; prunes per-provider excess */
+  function putSession(session) {
+    if (!session || !session.providerKey) return Promise.resolve();
+    return openHistoryDB().then((db) => {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(HISTORY_STORE_NAME, "readwrite");
+        const store = tx.objectStore(HISTORY_STORE_NAME);
+        const getReq = store.get(session.id);
+        getReq.onsuccess = () => {
+          const existing = getReq.result;
+          const toSave = {
+            id: session.id,
+            providerKey: session.providerKey,
+            createdAt: existing?.createdAt || session.createdAt || session.updatedAt || Date.now(),
+            updatedAt: session.updatedAt || Date.now(),
+            title: session.title,
+            messages: session.messages
+          };
+          store.put(toSave);
+          tx.oncomplete = () => {
+            db.close();
+            pruneSessionsForProvider(session.providerKey).then(resolve).catch(reject);
+          };
+        };
+        getReq.onerror = () => {
+          db.close();
+          reject(getReq.error);
+        };
+        tx.onerror = () => {
+          db.close();
+          reject(tx.error);
+        };
+      });
+    }).then(() => {
+      log("Saved LLM session to IndexedDB:", session.id);
+    }).catch((e) => {
+      logWarn("Error saving LLM history:", e);
+    });
+  }
+
+  function pruneSessionsForProvider(providerKey) {
+    return openHistoryDB().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, "readwrite");
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const index = store.index("providerKey");
+      const req = index.getAll(IDBKeyRange.only(providerKey));
+      req.onsuccess = () => {
+        const sessions = (req.result || []).filter((s) => s && s.providerKey === providerKey);
+        sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
+        if (sessions.length > HISTORY_MAX_SESSIONS_PER_PROVIDER) {
+          const toRemove = sessions.slice(HISTORY_MAX_SESSIONS_PER_PROVIDER);
+          toRemove.forEach((s) => store.delete(s.id));
+        }
+      };
+      req.onerror = () => { db.close(); reject(req.error); };
+      tx.oncomplete = () => { db.close(); resolve(); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    }));
+  }
+
+  /** Delete a session by id */
+  function deleteSessionById(id) {
+    return openHistoryDB().then((db) => {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(HISTORY_STORE_NAME, "readwrite");
+        const store = tx.objectStore(HISTORY_STORE_NAME);
+        store.delete(id);
+        tx.oncomplete = () => { db.close(); resolve(); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+      });
+    });
+  }
+
+  /** One-time migration from JSON file if it exists */
+  function migrateFromFileIfNeeded() {
     try {
       const dirSvc = Components.classes["@mozilla.org/file/directory_service;1"]
         .getService(Components.interfaces.nsIProperties);
       const profD = dirSvc.get("ProfD", Components.interfaces.nsIFile);
       const file = profD.clone();
       file.append(HISTORY_FILE_NAME);
-      return file;
-    } catch (e) {
-      logWarn("Could not get profile file for history:", e);
-      return null;
-    }
-  }
-
-  function loadHistoryFromProfileFile() {
-    const file = getProfileHistoryFile();
-    if (!file || !file.exists()) {
-      return null;
-    }
-    try {
+      if (!file.exists()) return Promise.resolve();
+      const converter = Components.classes["@mozilla.org/intl/converter-input-stream;1"]
+        .createInstance(Components.interfaces.nsIConverterInputStream);
       const fileStream = Components.classes["@mozilla.org/network/file-input-stream;1"]
         .createInstance(Components.interfaces.nsIFileInputStream);
       fileStream.init(file, 0x01, 0, 0);
-      const Ci = Components.interfaces;
-      const converter = Components.classes["@mozilla.org/intl/converter-input-stream;1"]
-        .createInstance(Ci.nsIConverterInputStream);
-      converter.init(fileStream, "UTF-8", 8192, Ci.nsIConverterInputStream.DEFAULT_REPLACEMENT_CHARACTER);
+      converter.init(fileStream, "UTF-8", 8192, Components.interfaces.nsIConverterInputStream.DEFAULT_REPLACEMENT_CHARACTER);
       const parts = [];
       const out = {};
       let n;
-      while ((n = converter.readString(8192, out)) > 0) {
-        // Copy string so we don't depend on the implementation reusing the same buffer
-        parts.push(String(out.value));
+      while ((n = converter.readString(8192, out)) > 0) parts.push(String(out.value));
+      converter.close();
+      fileStream.close();
+      const data = JSON.parse(parts.join(""));
+      const sessions = Array.isArray(data?.sessions) ? data.sessions : [];
+      if (!sessions.length) {
+        file.remove(false);
+        return Promise.resolve();
       }
-      converter.close();
-      fileStream.close();
-      const str = parts.join("");
-      if (!str) return null;
-      const data = JSON.parse(str);
-      log("Loaded LLM history from profile file");
-      return data;
+      return openHistoryDB().then((db) => {
+        return new Promise((resolve, reject) => {
+          const tx = db.transaction(HISTORY_STORE_NAME, "readwrite");
+          const store = tx.objectStore(HISTORY_STORE_NAME);
+          sessions.forEach((s) => { if (s && s.id && s.providerKey) store.put(s); });
+          tx.oncomplete = () => {
+            db.close();
+            try { file.remove(false); } catch (e) {}
+            log("Migrated", sessions.length, "sessions from file to IndexedDB");
+            resolve();
+          };
+          tx.onerror = () => { db.close(); reject(tx.error); };
+        });
+      });
     } catch (e) {
-      logWarn("Error reading LLM history from profile file:", e);
-      return null;
-    }
-  }
-
-  function saveHistoryToProfileFile(payload) {
-    const file = getProfileHistoryFile();
-    if (!file) return;
-    try {
-      const json = JSON.stringify(payload);
-      const parent = file.parent;
-      if (!parent) return;
-      const tempFile = parent.clone();
-      tempFile.append(HISTORY_FILE_NAME + ".tmp");
-      const fileStream = Components.classes["@mozilla.org/network/file-output-stream;1"]
-        .createInstance(Components.interfaces.nsIFileOutputStream);
-      fileStream.init(tempFile, 0x02 | 0x08 | 0x20, 0o664, 0);
-      const converter = Components.classes["@mozilla.org/intl/converter-output-stream;1"]
-        .createInstance(Components.interfaces.nsIConverterOutputStream);
-      converter.init(fileStream, "UTF-8", 0, 0);
-      converter.writeString(json);
-      converter.close();
-      fileStream.close();
-      if (file.exists()) file.remove();
-      tempFile.moveTo(parent, HISTORY_FILE_NAME);
-      log("Saved LLM history to profile file");
-    } catch (e) {
-      logWarn("Error writing LLM history to profile file:", e);
+      return Promise.resolve();
     }
   }
 
@@ -224,37 +317,6 @@
     }
   }
 
-  function loadHistoryRaw() {
-    try {
-      return loadHistoryFromProfileFile();
-    } catch (e) {
-      logWarn("Error loading LLM history:", e);
-      return null;
-    }
-  }
-
-  function saveHistoryRaw(payload) {
-    saveHistoryToProfileFile(payload);
-  }
-
-  function getNormalizedHistory() {
-    const data = loadHistoryRaw();
-    if (!data || typeof data !== "object") {
-      log("No existing LLM history found");
-      return { version: 1, maxSessions: HISTORY_MAX_SESSIONS_PER_PROVIDER, sessions: [] };
-    }
-    if (!Array.isArray(data.sessions)) {
-      data.sessions = [];
-    }
-    if (typeof data.maxSessions !== "number" || data.maxSessions <= 0 || data.maxSessions < HISTORY_MAX_SESSIONS_PER_PROVIDER) {
-      data.maxSessions = HISTORY_MAX_SESSIONS_PER_PROVIDER;
-    }
-    if (typeof data.version !== "number") {
-      data.version = 1;
-    }
-    return data;
-  }
-
   /** Safety cap only (500k); normal messages are stored in full for complete conversation restore */
   function truncateContent(content) {
     if (!content || typeof content !== "string") {
@@ -264,53 +326,6 @@
       return content.slice(0, HISTORY_MAX_CONTENT_LENGTH) + "...";
     }
     return content;
-  }
-
-  function putSession(session) {
-    const data = getNormalizedHistory();
-    const existingIndex = session.id ? data.sessions.findIndex((s) => s && s.id === session.id) : -1;
-
-    if (existingIndex >= 0) {
-      // Replace existing session (preserve createdAt)
-      const existing = data.sessions[existingIndex];
-      data.sessions[existingIndex] = {
-        id: session.id,
-        providerKey: session.providerKey,
-        createdAt: existing.createdAt,
-        updatedAt: session.updatedAt,
-        title: session.title,
-        messages: session.messages
-      };
-      log("Updated existing LLM session in history:", session.id);
-    } else {
-      // New session: prepend and prune
-      if (!session.createdAt) {
-        session.createdAt = session.updatedAt || Date.now();
-      }
-      data.sessions.unshift(session);
-      let countForProvider = 0;
-      data.sessions = data.sessions.filter((s) => {
-        if (s.providerKey !== session.providerKey) {
-          return true;
-        }
-        countForProvider++;
-        if (countForProvider > data.maxSessions) {
-          return false;
-        }
-        return true;
-      });
-      log("Saving new LLM conversation session to history for provider:", session.providerKey);
-    }
-
-    saveHistoryRaw(data);
-  }
-
-  function getProviderSessions(providerKey) {
-    if (!providerKey) {
-      return [];
-    }
-    const data = getNormalizedHistory();
-    return data.sessions.filter((s) => s && s.providerKey === providerKey);
   }
 
   function buildSessionFromConversation(urlbar) {
@@ -499,8 +514,8 @@
     log("Dismissed history list, back to LLM mode");
   }
 
-  function showHistoryListForProvider(providerKey, urlbar, urlbarInput) {
-    const sessions = getProviderSessions(providerKey);
+  async function showHistoryListForProvider(providerKey, urlbar, urlbarInput) {
+    const sessions = await getProviderSessions(providerKey);
     if (!sessions.length) {
       log("No stored LLM history sessions to show for provider:", providerKey);
       return;
@@ -581,7 +596,7 @@
         loadSessionIntoCurrentConversation(selected, urlbar, urlbarInput);
       });
 
-      deleteButton.addEventListener("click", (e) => {
+      deleteButton.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
         const idxAttr = item.getAttribute("data-session-index");
@@ -590,11 +605,13 @@
           return;
         }
 
-        const data = getNormalizedHistory();
-        // Remove by id to avoid index drift
         const targetId = sessions[idx].id;
-        data.sessions = data.sessions.filter((s) => s.id !== targetId);
-        saveHistoryRaw(data);
+        try {
+          await deleteSessionById(targetId);
+        } catch (err) {
+          logWarn("Failed to delete session:", err);
+          return;
+        }
 
         // Remove from current in-memory list UI
         item.remove();
@@ -850,7 +867,10 @@ Do NOT explain. Just reply with one word.`
     }
 
     loadConfig();
-    
+
+    // Migrate from JSON file to IndexedDB on first run
+    migrateFromFileIfNeeded().catch(() => {});
+
     // Wait for browser window
     if (window.location.href !== "chrome://browser/content/browser.xhtml") {
       return;
@@ -1002,14 +1022,14 @@ Do NOT explain. Just reply with one word.`
         }
 
         // Load stored sessions for this provider
-        const sessions = getProviderSessions(providerKey);
-        if (!sessions.length) {
-          log("Alt+ArrowUp pressed but no stored sessions for provider:", providerKey);
-          return;
-        }
-
-        log("Alt+ArrowUp showing history list for provider:", providerKey, "with", sessions.length, "sessions");
-        showHistoryListForProvider(providerKey, urlbar, urlbarInput);
+        getProviderSessions(providerKey).then((sessions) => {
+          if (!sessions.length) {
+            log("Alt+ArrowUp pressed but no stored sessions for provider:", providerKey);
+            return;
+          }
+          log("Alt+ArrowUp showing history list for provider:", providerKey, "with", sessions.length, "sessions");
+          showHistoryListForProvider(providerKey, urlbar, urlbarInput);
+        });
       } else if (e.key === "Escape" && isLLMMode) {
         e.preventDefault();
         e.stopPropagation();
