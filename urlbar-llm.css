@@ -846,8 +846,6 @@
 .llm-conversation-container .llm-history-button:hover {
   background: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.15));
   border-color: light-dark(rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.25));
-  transform: translateY(-1px);
-  box-shadow: 0 2px 6px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.25));
 }
 
 .llm-conversation-container .llm-history-button:active {
