@@ -103,8 +103,8 @@
   let currentAssistantMessage = ""; // Track current streaming response
   let currentSearchSources = []; // Track sources used for current response
 
-  // Per-tab conversation history (persisted via SessionStore)
-  const HISTORY_STORAGE_KEY = "urlbar-llm-history";
+  // Global conversation history (urlbar is shared; one list, persisted in profile)
+  const HISTORY_FILE_NAME = "urlbar-llm-history.json";
   const HISTORY_MAX_SESSIONS_PER_PROVIDER = 20;
   const HISTORY_MAX_MESSAGES_PER_SESSION = 50;
   const HISTORY_MAX_TITLE_LENGTH = 120;
@@ -135,8 +135,63 @@
   };
 
   // ============================================
-  // Tab helpers and SessionStore-backed history
+  // Global conversation history (profile file)
   // ============================================
+  function getProfileHistoryFile() {
+    try {
+      const dirSvc = Components.classes["@mozilla.org/file/directory_service;1"]
+        .getService(Components.interfaces.nsIProperties);
+      const profD = dirSvc.get("ProfD", Components.interfaces.nsIFile);
+      const file = profD.clone();
+      file.append(HISTORY_FILE_NAME);
+      return file;
+    } catch (e) {
+      logWarn("Could not get profile file for history:", e);
+      return null;
+    }
+  }
+
+  function loadHistoryFromProfileFile() {
+    const file = getProfileHistoryFile();
+    if (!file || !file.exists()) {
+      return null;
+    }
+    try {
+      const stream = Components.classes["@mozilla.org/network/file-input-stream;1"]
+        .createInstance(Components.interfaces.nsIFileInputStream);
+      stream.init(file, 0x01, 0, 0);
+      const scriptable = Components.classes["@mozilla.org/scriptableinputstream;1"]
+        .createInstance(Components.interfaces.nsIScriptableInputStream);
+      scriptable.init(stream);
+      const str = scriptable.read(scriptable.available());
+      scriptable.close();
+      stream.close();
+      if (!str) return null;
+      const data = JSON.parse(str);
+      log("Loaded LLM history from profile file");
+      return data;
+    } catch (e) {
+      logWarn("Error reading LLM history from profile file:", e);
+      return null;
+    }
+  }
+
+  function saveHistoryToProfileFile(payload) {
+    const file = getProfileHistoryFile();
+    if (!file) return;
+    try {
+      const json = JSON.stringify(payload);
+      const stream = Components.classes["@mozilla.org/network/file-output-stream;1"]
+        .createInstance(Components.interfaces.nsIFileOutputStream);
+      stream.init(file, 0x02 | 0x08 | 0x20, 0o664, 0);
+      stream.write(json, json.length);
+      stream.close();
+      log("Saved LLM history to profile file");
+    } catch (e) {
+      logWarn("Error writing LLM history to profile file:", e);
+    }
+  }
+
   function getCurrentTab() {
     try {
       const topWin = window.top || window;
@@ -147,87 +202,23 @@
     }
   }
 
-  function loadTabHistoryRaw() {
+  function loadHistoryRaw() {
     try {
-      const tab = getCurrentTab();
-      if (!tab) {
-        return null;
-      }
-
-      // Prefer modern JS SessionStore module if available
-      if (window.SessionStore && typeof window.SessionStore.getCustomTabValue === "function") {
-        const value = window.SessionStore.getCustomTabValue(tab, HISTORY_STORAGE_KEY);
-        if (!value) {
-          return null;
-        }
-        try {
-          return JSON.parse(value);
-        } catch (e) {
-          logWarn("Failed to parse LLM history from JS SessionStore:", e);
-          return null;
-        }
-      }
-
-      // Fallback: legacy nsISessionStore service (may not exist in Zen)
-      try {
-        const legacy = Components.classes["@mozilla.org/browser/sessionstore;1"]
-          .getService(Components.interfaces.nsISessionStore);
-        const value = legacy.getTabValue(tab, HISTORY_STORAGE_KEY);
-        if (!value) {
-          return null;
-        }
-        try {
-          return JSON.parse(value);
-        } catch (e) {
-          logWarn("Failed to parse LLM history from legacy SessionStore:", e);
-          return null;
-        }
-      } catch (e) {
-        // Ignore; legacy service not available
-      }
-
-      // No SessionStore available
-      log("SessionStore not available; history load skipped");
-      if (!value) {
-        return null;
-      }
+      return loadHistoryFromProfileFile();
     } catch (e) {
-      logWarn("Error loading LLM history from SessionStore:", e);
+      logWarn("Error loading LLM history:", e);
       return null;
     }
   }
 
-  function saveTabHistoryRaw(payload) {
-    try {
-      const tab = getCurrentTab();
-      if (!tab) {
-        return;
-      }
-      const json = JSON.stringify(payload);
-
-      // Prefer modern JS SessionStore module if available
-      if (window.SessionStore && typeof window.SessionStore.setCustomTabValue === "function") {
-        window.SessionStore.setCustomTabValue(tab, HISTORY_STORAGE_KEY, json);
-        return;
-      }
-
-      // Fallback: legacy nsISessionStore service
-      try {
-        const legacy = Components.classes["@mozilla.org/browser/sessionstore;1"]
-          .getService(Components.interfaces.nsISessionStore);
-        legacy.setTabValue(tab, HISTORY_STORAGE_KEY, json);
-      } catch (e) {
-        log("SessionStore not available; history save skipped (no JS or legacy API)", e);
-      }
-    } catch (e) {
-      logWarn("Error saving LLM history to SessionStore:", e);
-    }
+  function saveHistoryRaw(payload) {
+    saveHistoryToProfileFile(payload);
   }
 
   function getNormalizedHistory() {
-    const data = loadTabHistoryRaw();
+    const data = loadHistoryRaw();
     if (!data || typeof data !== "object") {
-      log("No existing LLM history found in SessionStore");
+      log("No existing LLM history found");
       return { version: 1, maxSessions: HISTORY_MAX_SESSIONS_PER_PROVIDER, sessions: [] };
     }
     if (!Array.isArray(data.sessions)) {
@@ -288,7 +279,7 @@
       log("Saving new LLM conversation session to history for provider:", session.providerKey);
     }
 
-    saveTabHistoryRaw(data);
+    saveHistoryRaw(data);
   }
 
   function getProviderSessions(providerKey) {
@@ -578,7 +569,7 @@
         // Remove by id to avoid index drift
         const targetId = sessions[idx].id;
         data.sessions = data.sessions.filter((s) => s.id !== targetId);
-        saveTabHistoryRaw(data);
+        saveHistoryRaw(data);
 
         // Remove from current in-memory list UI
         item.remove();
