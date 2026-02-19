@@ -641,7 +641,6 @@
   flex-direction: column;
   gap: var(--urlbarView-row-gutter, 2px);
   padding: var(--urlbarView-results-padding, 8px);
-  padding-bottom: calc(var(--urlbarView-results-padding, 8px) + 6px);
   max-height: 260px;
   overflow-y: auto;
   scrollbar-width: none;
