@@ -111,7 +111,8 @@
   const HISTORY_MAX_SESSIONS_PER_PROVIDER = 20;
   const HISTORY_MAX_MESSAGES_PER_SESSION = 50;
   const HISTORY_MAX_TITLE_LENGTH = 120;
-  const HISTORY_MAX_CONTENT_LENGTH = 4000;
+  /** Per-message safety cap (no truncation below this); allows full conversation restore */
+  const HISTORY_MAX_CONTENT_LENGTH = 500000;
 
   // Runtime navigation state for history browsing (Alt+ArrowUp)
   let historyIndex = -1; // -1 = live conversation, >= 0 = index in stored sessions
@@ -248,6 +249,7 @@
     return data;
   }
 
+  /** Safety cap only (500k); normal messages are stored in full for complete conversation restore */
   function truncateContent(content) {
     if (!content || typeof content !== "string") {
       return "";
@@ -333,11 +335,11 @@
       title = title.slice(0, HISTORY_MAX_TITLE_LENGTH) + "...";
     }
 
-    // Trim messages to last N and truncate long contents; keep sources for assistant messages
+    // Trim to last N messages; keep full content and sources for assistant messages (no truncation for normal length)
     const msgs = conversationHistory
       .slice(-HISTORY_MAX_MESSAGES_PER_SESSION)
       .map((m) => {
-        const out = { role: m.role, content: truncateContent(m.content) };
+        const out = { role: m.role, content: truncateContent(m.content) }; // truncateContent only caps at 500k as safety
         if (m.role === "assistant" && m.sources && m.sources.length > 0) {
           out.sources = m.sources.map((s) => ({
             title: s.title,
