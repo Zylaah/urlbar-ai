@@ -114,6 +114,9 @@
   let historyIndex = -1; // -1 = live conversation, >= 0 = index in stored sessions
   let lastHistoryProviderKey = null;
 
+  // When loading a conversation from history, we keep its session id so on deactivate we update that session instead of creating a new one
+  let currentSessionId = null;
+
   // Get preferences - Direct access to preference service using Components
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
     .getService(Components.interfaces.nsIPrefBranch);
@@ -250,23 +253,40 @@
   }
 
   function putSession(session) {
-    log("Saving LLM conversation session to history for provider:", session.providerKey);
     const data = getNormalizedHistory();
-    // Prepend newest session
-    data.sessions.unshift(session);
+    const existingIndex = session.id ? data.sessions.findIndex((s) => s && s.id === session.id) : -1;
 
-    // Prune oldest sessions per provider beyond maxSessions
-    let countForProvider = 0;
-    data.sessions = data.sessions.filter((s) => {
-      if (s.providerKey !== session.providerKey) {
+    if (existingIndex >= 0) {
+      // Replace existing session (preserve createdAt)
+      const existing = data.sessions[existingIndex];
+      data.sessions[existingIndex] = {
+        id: session.id,
+        providerKey: session.providerKey,
+        createdAt: existing.createdAt,
+        updatedAt: session.updatedAt,
+        title: session.title,
+        messages: session.messages
+      };
+      log("Updated existing LLM session in history:", session.id);
+    } else {
+      // New session: prepend and prune
+      if (!session.createdAt) {
+        session.createdAt = session.updatedAt || Date.now();
+      }
+      data.sessions.unshift(session);
+      let countForProvider = 0;
+      data.sessions = data.sessions.filter((s) => {
+        if (s.providerKey !== session.providerKey) {
+          return true;
+        }
+        countForProvider++;
+        if (countForProvider > data.maxSessions) {
+          return false;
+        }
         return true;
-      }
-      countForProvider++;
-      if (countForProvider > data.maxSessions) {
-        return false;
-      }
-      return true;
-    });
+      });
+      log("Saving new LLM conversation session to history for provider:", session.providerKey);
+    }
 
     saveTabHistoryRaw(data);
   }
@@ -328,10 +348,11 @@
     }
 
     const now = Date.now();
+    const id = currentSessionId || `${now}-${Math.random().toString(36).slice(2, 8)}`;
     return {
-      id: `${now}-${Math.random().toString(36).slice(2, 8)}`,
+      id,
       providerKey,
-      createdAt: now,
+      createdAt: currentSessionId ? undefined : now,
       updatedAt: now,
       title,
       messages: msgs
@@ -408,6 +429,9 @@
     if (!conversationContainer) {
       return;
     }
+
+    // Track this session so on deactivate we update it instead of creating a new one
+    currentSessionId = session.id || null;
 
     // Replace in-memory history (keep sources for assistant messages)
     conversationHistory = session.messages.map((m) => {
@@ -2258,6 +2282,7 @@ Provide a direct, informative answer with citations:`;
     currentSearchSources = [];
     historyIndex = -1;
     lastHistoryProviderKey = null;
+    currentSessionId = null;
     
     // Always restore native blur handler and clear interaction flags on deactivation
     isClickingLink = false;
