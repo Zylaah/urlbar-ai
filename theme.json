@@ -2,7 +2,7 @@
   "id": "urlbar-llm",
   "homepage": "https://github.com/Zylaah/urlbar-ai",
   "name": "URL Bar LLM",
-  "description": "Add AI-powered LLM chat directly in the URL bar. Type @provider + Tab to activate, then chat with Mistral, OpenAI, Google Gemini or local Ollama models. Responses stream in real-time in the suggestions dropdown.",
+  "description": "Add AI-powered LLM chat directly in the URL bar. Type /provider + Tab to activate, then chat with Mistral, OpenAI, Google Gemini or local Ollama models. Responses stream in real-time in the suggestions dropdown.",
   "author": "Zylaah",
   "version": "1.0.0",
   "updatedAt": "2026-01-26",

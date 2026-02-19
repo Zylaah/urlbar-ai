@@ -2,7 +2,7 @@
  * URL Bar LLM Integration for Zen Browser
  * 
  * Usage:
- * 1. Type "@provider" (e.g., "@mistral", "@openai", "@gemini", "@ollama")
+ * 1. Type "/provider" (e.g., "/mistral", "/openai", "/gemini", "/ollama")
  * 2. Press Tab to activate LLM mode
  * 3. Type your message
  * 4. Press Enter to send and stream response
@@ -397,8 +397,8 @@ Do NOT explain. Just reply with one word.`
         // Prevent native urlbar from processing results
         e.stopPropagation();
       } else {
-        // Check for "@provider" pattern
-        const match = inputValue.match(/^@(\w+)(\s|$)/);
+        // Check for "/provider" pattern
+        const match = inputValue.match(/^\/(\w+)(\s|$)/);
         if (match) {
           const providerKey = match[1].toLowerCase();
           if (CONFIG.providers[providerKey]) {
@@ -425,7 +425,7 @@ Do NOT explain. Just reply with one word.`
     // Listen for Tab key to activate
     urlbarInput.addEventListener("keydown", (e) => {
       if (e.key === "Tab" && !isLLMMode) {
-        const match = inputValue.match(/^@(\w+)(\s|$)/);
+        const match = inputValue.match(/^\/(\w+)(\s|$)/);
         if (match) {
           e.preventDefault();
           e.stopPropagation();
@@ -1652,8 +1652,8 @@ Provide a direct, informative answer with citations:`;
     isLLMMode = true;
     currentProvider = CONFIG.providers[providerKey];
     
-    // Remove "@provider" from input and store query
-    const newValue = urlbarInput.value.replace(/^@\w+\s*/, "").trim();
+    // Remove "/provider" from input and store query
+    const newValue = urlbarInput.value.replace(/^\/\w+\s*/, "").trim();
     urlbarInput.value = newValue;
     currentQuery = newValue;
     
