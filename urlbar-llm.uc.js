@@ -1176,7 +1176,7 @@ Do NOT explain. Just reply with one word.`
     searchCache.set(key, value);
   }
   
-  async function searchWeb(query, limit = LIMITS.MAX_SEARCH_RESULTS) {
+  async function searchWeb(query, limit = LIMITS.MAX_SEARCH_RESULTS, providerKey = null) {
     if (!isWebSearchEnabled()) {
       return null;
     }
@@ -1193,8 +1193,9 @@ Do NOT explain. Just reply with one word.`
     }
 
     try {
+      const useOllamaSearch = providerKey === 'ollama' && hasOllamaWebSearchKey();
       // Try Ollama Web Search API first (if API key is configured)
-      if (hasOllamaWebSearchKey()) {
+      if (useOllamaSearch) {
         const ollamaResults = await searchOllamaWeb(query, limit);
         if (ollamaResults && ollamaResults.length > 0) {
           cacheSet(cacheKey, { results: ollamaResults, timestamp: Date.now() });
@@ -1763,9 +1764,9 @@ Do NOT explain. Just reply with one word.`
    * Fetch content from multiple search results in parallel
    * Optimized for speed - uses shorter timeouts and settles quickly
    */
-  async function fetchSearchResultsContent(searchResults, maxResults = LIMITS.MAX_FETCH_RESULTS) {
+  async function fetchSearchResultsContent(searchResults, maxResults = LIMITS.MAX_FETCH_RESULTS, providerKey = null) {
     const startTime = Date.now();
-    const useOllamaFetch = hasOllamaWebSearchKey();
+    const useOllamaFetch = providerKey === 'ollama' && hasOllamaWebSearchKey();
     log('Fetching content from', Math.min(searchResults.length, maxResults), 'pages...',
         useOllamaFetch ? '(using Ollama web fetch)' : '(using local fetch)');
     
@@ -2566,14 +2567,14 @@ Provide a direct, informative answer with citations:`;
         
         log('Web search triggered for query:', query);
         const startTime = Date.now();
-        const searchResults = await searchWeb(query);
+        const searchResults = await searchWeb(query, LIMITS.MAX_SEARCH_RESULTS, providerKey);
         
         if (searchResults && searchResults.length > 0) {
           // Update status - fetching content
           titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Reading sources...</span>';
           
           // Fetch actual page content from search results (faster now)
-          const resultsWithContent = await fetchSearchResultsContent(searchResults, 3);
+          const resultsWithContent = await fetchSearchResultsContent(searchResults, 3, providerKey);
           
           // Store for source pills display
           searchResultsForDisplay = resultsWithContent;
