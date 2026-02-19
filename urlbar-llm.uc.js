@@ -403,7 +403,7 @@
 
     messageDiv.appendChild(contentDiv);
     if (sources && sources.length > 0) {
-      displaySourcePills(messageDiv, sources);
+      injectFaviconsIntoCitationMarkers(messageDiv, sources);
     }
     conversationContainer.appendChild(messageDiv);
   }
@@ -1339,9 +1339,9 @@ Do NOT explain. Just reply with one word.`
       return text; // Strip unsafe links, keep text
     });
     
-    // Citation markers [1], [2], etc. - convert to styled spans with data attribute
+    // Citation markers [1], [2], etc. - convert to styled spans (favicon injected later by injectFaviconsIntoCitationMarkers)
     // Match [1], [2], [3] etc. but not [text](url) links which were already converted
-    html = html.replace(/\[(\d+)\](?!\()/g, '<span class="llm-citation-marker" data-source="$1">$1</span>');
+    html = html.replace(/\[(\d+)\](?!\()/g, '<span class="llm-citation-marker" data-source="$1"></span>');
     
     // Horizontal rule (---, ***, ___) - must be before line breaks
     html = html.replace(/^(?:---+|\*\*\*+|___+)\s*$/gm, '<hr class="llm-markdown-hr"/>');
@@ -2077,115 +2077,28 @@ Provide a direct, informative answer with citations:`;
   }
 
   /**
-   * Display source pills at the bottom of a message
-   * Creates clickable pills showing the sources used
+   * Inject favicons into citation markers [1], [2], etc. and set data-url for click-to-open.
+   * No separate source section – markers in the text show the site favicon only.
    */
-  function displaySourcePills(messageElement, sources) {
+  function injectFaviconsIntoCitationMarkers(messageElement, sources) {
     if (!messageElement || !sources || sources.length === 0) {
       return;
     }
-    
-    // Check if pills already exist
-    let existingPills = messageElement.querySelector('.llm-source-pills');
-    if (existingPills) {
-      existingPills.remove();
-    }
-    
-    // Create pills container
-    const pillsContainer = document.createElement('div');
-    pillsContainer.className = 'llm-source-pills';
-    
-    // Add label
-    const label = document.createElement('span');
-    label.className = 'llm-source-pills-label';
-    label.textContent = 'Sources';
-    pillsContainer.appendChild(label);
-    
-    // Create a pill for each source
-    sources.forEach((source, i) => {
-      const pill = document.createElement('a');
-      pill.className = 'llm-source-pill';
-      pill.href = source.url;
-      pill.target = '_blank';
-      pill.rel = 'noopener';
-      pill.title = source.title;
-      
-      // Add index number
-      const indexSpan = document.createElement('span');
-      indexSpan.className = 'llm-source-pill-index';
-      indexSpan.textContent = source.index || (i + 1);
-      pill.appendChild(indexSpan);
-      
-      // Add favicon
-      const favicon = document.createElement('img');
-      favicon.className = 'llm-source-pill-favicon';
-      favicon.src = `https://www.google.com/s2/favicons?domain=${source.source}&sz=16`;
-      favicon.alt = '';
-      favicon.onerror = () => { favicon.style.display = 'none'; };
-      pill.appendChild(favicon);
-      
-      // Add source name
-      const sourceName = document.createElement('span');
-      sourceName.className = 'llm-source-pill-name';
-      sourceName.textContent = source.source;
-      pill.appendChild(sourceName);
-      
-      // Handle click - open in background tab
-      pill.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        isClickingLink = true;
-        suppressNativeBlur();
-      });
-      
-      pill.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        try {
-          const topWindow = window.top || window;
-          const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
-          
-          if (browser && browser.addTab) {
-            browser.addTab(source.url, {
-              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
-              inBackground: true
-            });
-            log('Opened source in background:', source.url);
-          } else if (topWindow.open) {
-            topWindow.open(source.url, '_blank');
-          }
-          
-          // Keep urlbar open and restore native blur
-          setTimeout(() => {
-            const urlbarInput = document.getElementById("urlbar-input");
-            const urlbar = document.getElementById("urlbar");
-            if (urlbarInput && urlbar) {
-              urlbar.setAttribute("open", "true");
-              urlbarInput.focus();
-            }
-            isClickingLink = false;
-            restoreNativeBlur();
-          }, LIMITS.FOCUS_RESTORE_DELAY);
-        } catch (err) {
-          logError('Failed to open source:', err);
-          isClickingLink = false;
-          restoreNativeBlur();
-        }
-      });
-      
-      pillsContainer.appendChild(pill);
+    const domainForFavicon = (s) => (s && s.source) ? s.source : (s && s.url ? new URL(s.url).hostname.replace(/^www\./, '') : '');
+    messageElement.querySelectorAll('.llm-citation-marker').forEach((marker) => {
+      const idx = parseInt(marker.dataset.source, 10);
+      const source = sources[idx - 1];
+      if (!source || !source.url) return;
+      marker.dataset.url = source.url;
+      marker.title = source.title || source.source || source.url;
+      const domain = domainForFavicon(source);
+      const img = document.createElement('img');
+      img.className = 'llm-citation-favicon';
+      img.src = `https://www.google.com/s2/favicons?domain=${domain}&sz=32`;
+      img.alt = '';
+      img.onerror = () => { img.style.display = 'none'; };
+      marker.appendChild(img);
     });
-    
-    messageElement.appendChild(pillsContainer);
-    
-    // Scroll to show pills
-    setTimeout(() => {
-      const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
-      if (urlbarViewBodyInner) {
-        urlbarViewBodyInner.scrollTop = urlbarViewBodyInner.scrollHeight;
-      }
-    }, LIMITS.SCROLL_DELAY);
   }
 
   function activateLLMMode(urlbar, urlbarInput, providerKey) {
@@ -2588,37 +2501,22 @@ Provide a direct, informative answer with citations:`;
       if (citationMarker && eventType === 'click') {
         e.preventDefault();
         e.stopPropagation();
-        
-        const sourceIndex = parseInt(citationMarker.dataset.source, 10);
-        if (sourceIndex && currentSearchSources && currentSearchSources[sourceIndex - 1]) {
-          const source = currentSearchSources[sourceIndex - 1];
-          
-          // Open the source URL in background tab
+        const url = citationMarker.dataset.url || (currentSearchSources && currentSearchSources[parseInt(citationMarker.dataset.source, 10) - 1]?.url);
+        if (url) {
           try {
             isClickingLink = true;
             suppressNativeBlur();
             const topWindow = window.top || window;
             const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
-            
             if (browser && browser.addTab) {
-              browser.addTab(source.url, {
+              browser.addTab(url, {
                 triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
                 inBackground: true
               });
-              log('Opened source', sourceIndex, 'in background:', source.url);
+              log('Opened citation source in background:', url);
             }
-            
-            // Highlight the corresponding pill briefly
-            const pillsContainer = messageDiv.querySelector('.llm-source-pills');
-            if (pillsContainer) {
-              const pills = pillsContainer.querySelectorAll('.llm-source-pill');
-              const pill = pills[sourceIndex - 1];
-              if (pill) {
-                pill.classList.add('llm-source-pill-highlight');
-                setTimeout(() => pill.classList.remove('llm-source-pill-highlight'), LIMITS.ANIMATION_GLOW_DURATION);
-              }
-            }
-            
+            citationMarker.classList.add('llm-citation-marker-highlight');
+            setTimeout(() => citationMarker.classList.remove('llm-citation-marker-highlight'), LIMITS.ANIMATION_GLOW_DURATION);
             setTimeout(() => {
               const urlbarInput = document.getElementById("urlbar-input");
               const urlbar = document.getElementById("urlbar");
@@ -2834,9 +2732,9 @@ Provide a direct, informative answer with citations:`;
       
       log("Conversation now has", conversationHistory.length, "messages");
       
-      // Display source pills if we have search sources
+      // Inject favicons into citation markers (no separate source section)
       if (currentSearchSources && currentSearchSources.length > 0) {
-        displaySourcePills(streamingResultRow, currentSearchSources);
+        injectFaviconsIntoCitationMarkers(streamingResultRow, currentSearchSources);
       }
 
       // Persist conversation after each assistant response (and on deactivate)
