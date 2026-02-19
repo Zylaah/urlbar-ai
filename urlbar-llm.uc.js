@@ -534,11 +534,6 @@
     const listRoot = document.createElement("div");
     listRoot.className = "llm-history-list";
 
-    const header = document.createElement("div");
-    header.className = "llm-history-list-header";
-    header.textContent = "Previous conversations";
-    listRoot.appendChild(header);
-
     sessions.forEach((session, index) => {
       const item = document.createElement("div");
       item.className = "llm-history-list-item";

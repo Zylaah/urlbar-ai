@@ -653,17 +653,6 @@
   display: none;
 }
 
-/* Header – subtle, like Zen section labels */
-.llm-conversation-container .llm-history-list-header {
-  font-size: var(--urlbarView-small-font-size, 0.85em);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  opacity: 0.65;
-  padding-block: 2px 4px;
-  padding-inline: var(--urlbarView-item-inline-padding, 8px);
-}
-
 /* Individual item – matches .urlbarView-row sizing and hover */
 .llm-conversation-container .llm-history-list-item {
   display: flex;
