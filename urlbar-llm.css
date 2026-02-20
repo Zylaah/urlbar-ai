@@ -701,6 +701,9 @@
 /* Favicon area – matches .urlbarView-favicon */
 .llm-conversation-container .llm-history-favicon {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
   margin-inline-start: 0;
@@ -708,11 +711,14 @@
   padding: 6px;
   border-radius: 4px;
   box-sizing: border-box;
-  background-color: transparent;
-  background-image: url("chrome://browser/skin/zen-icons/history.svg");
-  background-size: 16px;
-  background-repeat: no-repeat;
-  background-position: center;
+}
+
+.llm-conversation-container .llm-history-favicon img {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  -moz-context-properties: fill, fill-opacity;
+  fill: currentColor;
 }
 
 /* Title + timestamp block */

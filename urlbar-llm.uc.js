@@ -546,11 +546,14 @@
       const noWrap = document.createElement("div");
       noWrap.className = "llm-history-list-no-wrap";
 
-      const favicon = document.createElement("span");
-      favicon.className = "llm-history-favicon";
-      favicon.setAttribute("role", "img");
-      favicon.setAttribute("aria-hidden", "true");
-      noWrap.appendChild(favicon);
+      const faviconBox = document.createElement("span");
+      faviconBox.className = "llm-history-favicon";
+      const faviconImg = document.createElement("img");
+      faviconImg.src = "chrome://browser/skin/zen-icons/history.svg";
+      faviconImg.alt = "";
+      faviconImg.setAttribute("aria-hidden", "true");
+      faviconBox.appendChild(faviconImg);
+      noWrap.appendChild(faviconBox);
 
       const metaRow = document.createElement("div");
       metaRow.className = "llm-history-list-meta";
