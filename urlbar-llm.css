@@ -646,7 +646,7 @@
 .llm-conversation-container .llm-history-list {
   display: flex;
   flex-direction: column;
-  gap: var(--urlbarView-row-gutter, 2px);
+  gap: 5px;
   max-height: 260px;
   overflow-y: auto;
   scrollbar-width: none;
@@ -665,8 +665,8 @@
   --urlbarView-item-block-padding: 6px;
   display: flex;
   align-items: center;
-  height: 50px;
-  min-height: 50px;
+  height: 48px;
+  min-height: 48px;
   box-sizing: border-box;
   padding-block: var(--urlbarView-item-block-padding);
   padding-inline: var(--urlbarView-item-inline-padding);
