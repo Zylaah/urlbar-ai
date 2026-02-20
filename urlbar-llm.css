@@ -666,7 +666,7 @@
   min-height: 32px;
   padding-block: var(--urlbarView-item-block-padding);
   padding-inline: var(--urlbarView-item-inline-padding);
-  border-radius: var(--toolbarbutton-border-radius, 4px);
+  border-radius: 16px;
   color: light-dark(rgba(0, 0, 0, 0.7), rgba(255, 255, 255, 0.7)) !important;
   cursor: pointer;
   transition: background-color 120ms ease-out;
