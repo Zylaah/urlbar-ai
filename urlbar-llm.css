@@ -659,14 +659,14 @@
   display: none;
 }
 
-/* Individual item – exact .urlbarView-row match, 48px height */
+/* Individual item – exact .urlbarView-row match, 52px height */
 .llm-conversation-container .llm-history-list-item {
   --urlbarView-item-inline-padding: 8px;
   --urlbarView-item-block-padding: 6px;
   display: flex;
   align-items: center;
-  height: 48px;
-  min-height: 48px;
+  height: 52px;
+  min-height: 52px;
   box-sizing: border-box;
   padding-block: var(--urlbarView-item-block-padding);
   padding-inline: var(--urlbarView-item-inline-padding);
