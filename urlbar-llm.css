@@ -663,6 +663,8 @@
 .llm-conversation-container .llm-history-list-item {
   --urlbarView-item-inline-padding: 8px;
   --urlbarView-item-block-padding: 6px;
+  display: flex;
+  align-items: center;
   height: 48px;
   min-height: 48px;
   box-sizing: border-box;
@@ -687,8 +689,8 @@
   display: flex;
   flex-direction: row;
   align-items: center;
-  min-height: inherit;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 /* No-wrap block – like .urlbarView-no-wrap */
