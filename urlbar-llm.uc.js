@@ -531,61 +531,57 @@
       return;
     }
 
-    // History list root – use Zen's urlbarView-results for native styling
+    // History list root
     const listRoot = document.createElement("div");
-    listRoot.className = "llm-history-list urlbarView-results";
-    listRoot.setAttribute("role", "listbox");
+    listRoot.className = "llm-history-list";
 
     sessions.forEach((session, index) => {
       const item = document.createElement("div");
-      item.className = "urlbarView-row llm-history-list-item";
+      item.className = "llm-history-list-item";
       item.setAttribute("data-session-index", String(index));
-      item.setAttribute("role", "presentation");
-      if (session.updatedAt || session.createdAt) {
-        item.setAttribute("has-url", "");
-      }
 
-      /* Zen urlbar structure: row-inner (span) > no-wrap (span) + urlbarView-url (span) */
-      const rowInner = document.createElement("span");
-      rowInner.className = "urlbarView-row-inner";
-      rowInner.setAttribute("role", "option");
+      const rowInner = document.createElement("div");
+      rowInner.className = "llm-history-list-row-inner";
 
-      const noWrap = document.createElement("span");
-      noWrap.className = "urlbarView-no-wrap";
+      const noWrap = document.createElement("div");
+      noWrap.className = "llm-history-list-no-wrap";
 
+      const faviconBox = document.createElement("span");
+      faviconBox.className = "llm-history-favicon";
       const faviconImg = document.createElement("img");
-      faviconImg.className = "urlbarView-favicon";
       faviconImg.src = "chrome://browser/skin/zen-icons/history.svg";
       faviconImg.alt = "";
       faviconImg.setAttribute("aria-hidden", "true");
-      noWrap.appendChild(faviconImg);
+      faviconBox.appendChild(faviconImg);
+      noWrap.appendChild(faviconBox);
+
+      const metaWrap = document.createElement("div");
+      metaWrap.className = "llm-history-list-meta";
 
       const title = document.createElement("span");
-      title.className = "urlbarView-title urlbarView-overflowable";
+      title.className = "llm-history-list-title";
       title.textContent = session.title || "(untitled conversation)";
-      noWrap.appendChild(title);
-
-      const deleteBtn = document.createElement("button");
-      deleteBtn.className = "llm-history-delete-button";
-      deleteBtn.textContent = "Delete";
-      const deleteWrap = document.createElement("span");
-      deleteWrap.className = "urlbarView-action llm-history-action-wrap";
-      deleteWrap.appendChild(deleteBtn);
-      noWrap.appendChild(deleteWrap);
-
-      rowInner.appendChild(noWrap);
+      metaWrap.appendChild(title);
 
       if (session.updatedAt || session.createdAt) {
         const subtitle = document.createElement("span");
-        subtitle.className = "urlbarView-url";
+        subtitle.className = "llm-history-list-subtitle";
         const ts = session.updatedAt || session.createdAt;
         try {
           subtitle.textContent = new Date(ts).toLocaleString();
         } catch (e) {
           subtitle.textContent = "";
         }
-        rowInner.appendChild(subtitle);
+        metaWrap.appendChild(subtitle);
       }
+
+      noWrap.appendChild(metaWrap);
+      rowInner.appendChild(noWrap);
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "llm-history-delete-button";
+      deleteBtn.textContent = "Delete";
+      rowInner.appendChild(deleteBtn);
 
       item.appendChild(rowInner);
 
@@ -634,9 +630,9 @@
         }
       });
 
-      /* Click on row (not Delete) opens conversation – matches Zen suggestion behavior */
+      /* Click on row (not Delete) opens conversation */
       item.addEventListener("click", (e) => {
-        if (e.target.closest(".llm-history-delete-button, .llm-history-action-wrap")) return;
+        if (e.target.closest(".llm-history-delete-button")) return;
         const idxAttr = item.getAttribute("data-session-index");
         const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
         if (Number.isFinite(idx) && idx >= 0 && idx < sessions.length) {
