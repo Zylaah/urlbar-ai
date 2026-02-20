@@ -539,16 +539,29 @@
       item.className = "llm-history-list-item";
       item.setAttribute("data-session-index", String(index));
 
+      /* Zen urlbar row structure: row > row-inner > no-wrap > [favicon, content] */
+      const rowInner = document.createElement("div");
+      rowInner.className = "llm-history-list-row-inner";
+
+      const noWrap = document.createElement("div");
+      noWrap.className = "llm-history-list-no-wrap";
+
+      const favicon = document.createElement("span");
+      favicon.className = "llm-history-favicon";
+      favicon.setAttribute("role", "img");
+      favicon.setAttribute("aria-hidden", "true");
+      noWrap.appendChild(favicon);
+
       const metaRow = document.createElement("div");
       metaRow.className = "llm-history-list-meta";
 
-      const title = document.createElement("div");
+      const title = document.createElement("span");
       title.className = "llm-history-list-title";
       title.textContent = session.title || "(untitled conversation)";
       metaRow.appendChild(title);
 
       if (session.updatedAt || session.createdAt) {
-        const subtitle = document.createElement("div");
+        const subtitle = document.createElement("span");
         subtitle.className = "llm-history-list-subtitle";
         const ts = session.updatedAt || session.createdAt;
         try {
@@ -559,7 +572,8 @@
         metaRow.appendChild(subtitle);
       }
 
-      item.appendChild(metaRow);
+      noWrap.appendChild(metaRow);
+      rowInner.appendChild(noWrap);
 
       const actions = document.createElement("div");
       actions.className = "llm-history-list-actions";
@@ -574,7 +588,8 @@
 
       actions.appendChild(openButton);
       actions.appendChild(deleteButton);
-      item.appendChild(actions);
+      rowInner.appendChild(actions);
+      item.appendChild(rowInner);
 
       openButton.addEventListener("click", (e) => {
         e.preventDefault();
@@ -633,6 +648,18 @@
           if (urlbarViewBodyInner) {
             urlbarViewBodyInner.style.display = "none";
           }
+        }
+      });
+
+      /* Click on row (not buttons) opens conversation – matches Zen suggestion behavior */
+      item.addEventListener("click", (e) => {
+        if (e.target.closest(".llm-history-delete-button") || e.target.closest(".llm-history-open-button")) return;
+        const idxAttr = item.getAttribute("data-session-index");
+        const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
+        if (Number.isFinite(idx) && idx >= 0 && idx < sessions.length) {
+          historyIndex = idx;
+          lastHistoryProviderKey = providerKey;
+          loadSessionIntoCurrentConversation(sessions[idx], urlbar, urlbarInput);
         }
       });
 

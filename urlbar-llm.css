@@ -632,19 +632,28 @@
 
 /* ============================================
    Conversation history list (Alt+ArrowUp)
-   Matches native Zen urlbar suggestions styling
+   Exact match to native Zen urlbar suggestions
+   (zen-omnibox.css #urlbar-results / .urlbarView-row)
    ============================================ */
 
-/* History list container – same as #urlbar-results */
+/* When showing only history, container matches urlbarView layout */
+.llm-conversation-container:has(.llm-history-list) {
+  padding: 0 !important;
+  gap: 0 !important;
+}
+
+/* History list container – exact copy of #urlbar-results */
 .llm-conversation-container .llm-history-list {
   display: flex;
   flex-direction: column;
   gap: var(--urlbarView-row-gutter, 2px);
-  padding: var(--urlbarView-results-padding, 8px);
   max-height: 260px;
   overflow-y: auto;
   scrollbar-width: none;
   box-sizing: border-box;
+  margin-block-start: calc(var(--urlbarView-results-padding, 8px) - 2px);
+  margin-block-end: var(--urlbarView-results-padding, 8px);
+  padding-block: 0 !important;
 }
 
 .llm-conversation-container .llm-history-list::-webkit-scrollbar {
@@ -652,18 +661,16 @@
   display: none;
 }
 
-/* Individual item – matches .urlbarView-row sizing and hover */
+/* Individual item – exact .urlbarView-row match */
 .llm-conversation-container .llm-history-list-item {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: var(--urlbarView-item-inline-padding, 8px);
+  --urlbarView-item-inline-padding: 8px;
+  --urlbarView-item-block-padding: 10px;
   min-height: 32px;
-  padding-block: var(--urlbarView-item-block-padding, 10px);
-  padding-inline: var(--urlbarView-item-inline-padding, 8px);
+  padding-block: var(--urlbarView-item-block-padding);
+  padding-inline: var(--urlbarView-item-inline-padding);
   border-radius: calc(var(--toolbarbutton-border-radius, 4px) - 2px);
   color: light-dark(rgba(0, 0, 0, 0.7), rgba(255, 255, 255, 0.7)) !important;
-  cursor: default;
+  cursor: pointer;
   transition: background-color 120ms ease-out;
 }
 
@@ -671,7 +678,46 @@
   background-color: color-mix(in srgb, var(--zen-branding-bg-reverse, var(--zen-primary-color, #5b8def)) 5%, transparent 95%) !important;
 }
 
-/* Title with timestamp */
+.llm-conversation-container .llm-history-list-item:hover .llm-history-favicon {
+  background-color: color-mix(in srgb, var(--zen-branding-bg-reverse, var(--zen-primary-color, #5b8def)) 5%, transparent 95%) !important;
+}
+
+/* Row inner – flex row like urlbarView-row-inner */
+.llm-conversation-container .llm-history-list-row-inner {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  min-height: inherit;
+  width: 100%;
+}
+
+/* No-wrap block – like .urlbarView-no-wrap */
+.llm-conversation-container .llm-history-list-no-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+/* Favicon area – matches .urlbarView-favicon */
+.llm-conversation-container .llm-history-favicon {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-inline-start: 0;
+  margin-inline-end: 12px;
+  padding: 6px;
+  border-radius: 4px;
+  box-sizing: border-box;
+  background-color: transparent;
+  background-image: url("chrome://browser/skin/zen-icons/history.svg");
+  background-size: 16px;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+/* Title + timestamp block */
 .llm-conversation-container .llm-history-list-meta {
   flex: 1;
   min-width: 0;
@@ -682,7 +728,7 @@
   gap: 1px;
 }
 
-/* Title – same as .urlbarView-title */
+/* Title – exact .urlbarView-title */
 .llm-conversation-container .llm-history-list-title {
   font-size: 14px !important;
   font-weight: 500 !important;
@@ -692,20 +738,24 @@
   white-space: nowrap;
 }
 
-/* Timestamp – secondary like Zen */
+/* Timestamp – matches .urlbarView-url / secondary text */
 .llm-conversation-container .llm-history-list-subtitle {
-  font-size: var(--urlbarView-small-font-size, 0.85em);
-  opacity: 0.7;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  color: light-dark(#4f4f4f, #aaa) !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Actions row – Open/Delete buttons */
+/* Actions – like .urlbarView-action with margin-left: auto */
 .llm-conversation-container .llm-history-list-actions {
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  margin-inline-start: auto;
 }
 
 /* Base button style – compact to match row height */
