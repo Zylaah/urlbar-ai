@@ -540,6 +540,7 @@
       item.className = "llm-history-list-item";
       item.setAttribute("data-session-index", String(index));
 
+      /* Zen urlbar row structure: row > row-inner > no-wrap > [favicon, content] */
       const rowInner = document.createElement("div");
       rowInner.className = "llm-history-list-row-inner";
 
@@ -555,13 +556,13 @@
       faviconBox.appendChild(faviconImg);
       noWrap.appendChild(faviconBox);
 
-      const metaWrap = document.createElement("div");
-      metaWrap.className = "llm-history-list-meta";
+      const metaRow = document.createElement("div");
+      metaRow.className = "llm-history-list-meta";
 
       const title = document.createElement("span");
       title.className = "llm-history-list-title";
       title.textContent = session.title || "(untitled conversation)";
-      metaWrap.appendChild(title);
+      metaRow.appendChild(title);
 
       if (session.updatedAt || session.createdAt) {
         const subtitle = document.createElement("span");
@@ -572,20 +573,24 @@
         } catch (e) {
           subtitle.textContent = "";
         }
-        metaWrap.appendChild(subtitle);
+        metaRow.appendChild(subtitle);
       }
 
-      noWrap.appendChild(metaWrap);
+      noWrap.appendChild(metaRow);
       rowInner.appendChild(noWrap);
 
-      const deleteBtn = document.createElement("button");
-      deleteBtn.className = "llm-history-delete-button";
-      deleteBtn.textContent = "Delete";
-      rowInner.appendChild(deleteBtn);
+      const actions = document.createElement("div");
+      actions.className = "llm-history-list-actions";
 
+      const deleteButton = document.createElement("button");
+      deleteButton.className = "llm-history-button llm-history-delete-button";
+      deleteButton.textContent = "Delete";
+
+      actions.appendChild(deleteButton);
+      rowInner.appendChild(actions);
       item.appendChild(rowInner);
 
-      deleteBtn.addEventListener("click", async (e) => {
+      deleteButton.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
         const idxAttr = item.getAttribute("data-session-index");
@@ -630,7 +635,7 @@
         }
       });
 
-      /* Click on row (not Delete) opens conversation */
+      /* Click on row (not Delete) opens conversation – matches Zen suggestion behavior */
       item.addEventListener("click", (e) => {
         if (e.target.closest(".llm-history-delete-button")) return;
         const idxAttr = item.getAttribute("data-session-index");
