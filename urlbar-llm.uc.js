@@ -581,33 +581,13 @@
       const actions = document.createElement("div");
       actions.className = "llm-history-list-actions";
 
-      const openButton = document.createElement("button");
-      openButton.className = "llm-history-button llm-history-open-button";
-      openButton.textContent = "Open";
-
       const deleteButton = document.createElement("button");
       deleteButton.className = "llm-history-button llm-history-delete-button";
       deleteButton.textContent = "Delete";
 
-      actions.appendChild(openButton);
       actions.appendChild(deleteButton);
       rowInner.appendChild(actions);
       item.appendChild(rowInner);
-
-      openButton.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const idxAttr = item.getAttribute("data-session-index");
-        const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
-        if (!Number.isFinite(idx) || idx < 0 || idx >= sessions.length) {
-          return;
-        }
-        historyIndex = idx;
-        lastHistoryProviderKey = providerKey;
-        const selected = sessions[idx];
-        log("History list item opened, loading session index", idx, "for provider:", providerKey);
-        loadSessionIntoCurrentConversation(selected, urlbar, urlbarInput);
-      });
 
       deleteButton.addEventListener("click", async (e) => {
         e.preventDefault();
@@ -654,9 +634,9 @@
         }
       });
 
-      /* Click on row (not buttons) opens conversation – matches Zen suggestion behavior */
+      /* Click on row (not Delete) opens conversation – matches Zen suggestion behavior */
       item.addEventListener("click", (e) => {
-        if (e.target.closest(".llm-history-delete-button") || e.target.closest(".llm-history-open-button")) return;
+        if (e.target.closest(".llm-history-delete-button")) return;
         const idxAttr = item.getAttribute("data-session-index");
         const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
         if (Number.isFinite(idx) && idx >= 0 && idx < sessions.length) {
