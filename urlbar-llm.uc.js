@@ -505,6 +505,7 @@
     }
     conversationContainer = null;
     conversationHistory = [];
+    currentSessionId = null; /* Next question starts a new session */
     urlbarInput.setAttribute("placeholder", "Ask anything...");
     const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
     if (urlbarViewBodyInner) {
