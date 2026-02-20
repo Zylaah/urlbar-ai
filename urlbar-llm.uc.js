@@ -1153,6 +1153,22 @@ Do NOT explain. Just reply with one word.`
       attributes: true,
       attributeFilter: ["open"]
     });
+
+    // Robust outside-click: when user clicks outside urlbar/urlbarView while in LLM or history mode,
+    // fully reset (exit history + LLM mode). Blur and mutation observers can miss edge cases.
+    document.addEventListener("mousedown", function outsideClickHandler(e) {
+      if (!isLLMMode && !isShowingHistoryList()) return;
+      if (isClickingLink || isSelectingInContainer) return;
+
+      const target = e.target;
+      const urlbarView = document.querySelector(".urlbarView");
+      const clickedInsideUrlbar = urlbar && urlbar.contains(target);
+      const clickedInsideView = urlbarView && urlbarView.contains(target);
+      if (clickedInsideUrlbar || clickedInsideView) return;
+
+      log("Outside click detected, deactivating LLM mode and resetting urlbar");
+      deactivateLLMMode(urlbar, urlbarInput, true);
+    }, true);
   }
 
   function showActivationHint(urlbar, providerKey) {
