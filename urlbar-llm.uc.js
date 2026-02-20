@@ -531,66 +531,65 @@
       return;
     }
 
-    // History list root
+    // History list root – use Zen's urlbarView-results for native styling
     const listRoot = document.createElement("div");
-    listRoot.className = "llm-history-list";
+    listRoot.className = "llm-history-list urlbarView-results";
+    listRoot.setAttribute("role", "listbox");
 
     sessions.forEach((session, index) => {
       const item = document.createElement("div");
-      item.className = "llm-history-list-item";
+      item.className = "urlbarView-row llm-history-list-item";
       item.setAttribute("data-session-index", String(index));
+      item.setAttribute("role", "presentation");
+      if (session.updatedAt || session.createdAt) {
+        item.setAttribute("has-url", "");
+      }
 
-      /* Zen urlbar row structure: row > row-inner > no-wrap > [favicon, content] */
-      const rowInner = document.createElement("div");
-      rowInner.className = "llm-history-list-row-inner";
+      /* Zen urlbar structure: row-inner (span) > no-wrap (span) + urlbarView-url (span) */
+      const rowInner = document.createElement("span");
+      rowInner.className = "urlbarView-row-inner";
+      rowInner.setAttribute("role", "option");
 
-      const noWrap = document.createElement("div");
-      noWrap.className = "llm-history-list-no-wrap";
+      const noWrap = document.createElement("span");
+      noWrap.className = "urlbarView-no-wrap";
 
-      const faviconBox = document.createElement("span");
-      faviconBox.className = "llm-history-favicon";
       const faviconImg = document.createElement("img");
+      faviconImg.className = "urlbarView-favicon";
       faviconImg.src = "chrome://browser/skin/zen-icons/history.svg";
       faviconImg.alt = "";
       faviconImg.setAttribute("aria-hidden", "true");
-      faviconBox.appendChild(faviconImg);
-      noWrap.appendChild(faviconBox);
-
-      const metaRow = document.createElement("div");
-      metaRow.className = "llm-history-list-meta";
+      noWrap.appendChild(faviconImg);
 
       const title = document.createElement("span");
-      title.className = "llm-history-list-title";
+      title.className = "urlbarView-title urlbarView-overflowable";
       title.textContent = session.title || "(untitled conversation)";
-      metaRow.appendChild(title);
+      noWrap.appendChild(title);
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "llm-history-delete-button";
+      deleteBtn.textContent = "Delete";
+      const deleteWrap = document.createElement("span");
+      deleteWrap.className = "urlbarView-action llm-history-action-wrap";
+      deleteWrap.appendChild(deleteBtn);
+      noWrap.appendChild(deleteWrap);
+
+      rowInner.appendChild(noWrap);
 
       if (session.updatedAt || session.createdAt) {
         const subtitle = document.createElement("span");
-        subtitle.className = "llm-history-list-subtitle";
+        subtitle.className = "urlbarView-url";
         const ts = session.updatedAt || session.createdAt;
         try {
           subtitle.textContent = new Date(ts).toLocaleString();
         } catch (e) {
           subtitle.textContent = "";
         }
-        metaRow.appendChild(subtitle);
+        rowInner.appendChild(subtitle);
       }
 
-      noWrap.appendChild(metaRow);
-      rowInner.appendChild(noWrap);
-
-      const actions = document.createElement("div");
-      actions.className = "llm-history-list-actions";
-
-      const deleteButton = document.createElement("button");
-      deleteButton.className = "llm-history-button llm-history-delete-button";
-      deleteButton.textContent = "Delete";
-
-      actions.appendChild(deleteButton);
-      rowInner.appendChild(actions);
       item.appendChild(rowInner);
 
-      deleteButton.addEventListener("click", async (e) => {
+      deleteBtn.addEventListener("click", async (e) => {
         e.preventDefault();
         e.stopPropagation();
         const idxAttr = item.getAttribute("data-session-index");
@@ -637,7 +636,7 @@
 
       /* Click on row (not Delete) opens conversation – matches Zen suggestion behavior */
       item.addEventListener("click", (e) => {
-        if (e.target.closest(".llm-history-delete-button")) return;
+        if (e.target.closest(".llm-history-delete-button, .llm-history-action-wrap")) return;
         const idxAttr = item.getAttribute("data-session-index");
         const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
         if (Number.isFinite(idx) && idx >= 0 && idx < sessions.length) {

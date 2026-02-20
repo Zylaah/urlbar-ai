@@ -632,8 +632,8 @@
 
 /* ============================================
    Conversation history list (Alt+ArrowUp)
-   Exact match to native Zen urlbar suggestions
-   (zen-omnibox.css #urlbar-results / .urlbarView-row)
+   Uses Zen's native .urlbarView-row / .urlbarView-row-inner etc.
+   so spacing and layout match exactly
    ============================================ */
 
 /* When showing only history, container matches urlbarView layout */
@@ -642,7 +642,7 @@
   gap: 0 !important;
 }
 
-/* History list container – exact copy of #urlbar-results */
+/* History list – same layout as #urlbar-results */
 .llm-conversation-container .llm-history-list {
   display: flex;
   flex-direction: column;
@@ -651,6 +651,8 @@
   overflow-y: auto;
   scrollbar-width: none;
   box-sizing: border-box;
+  margin-block-start: calc(var(--urlbarView-results-padding, 8px) - 2px);
+  margin-block-end: var(--urlbarView-results-padding, 8px);
   padding-block: 0 !important;
 }
 
@@ -659,150 +661,36 @@
   display: none;
 }
 
-/* Individual item – exact .urlbarView-row match, 52px height */
-.llm-conversation-container .llm-history-list-item {
-  --urlbarView-item-inline-padding: 8px;
-  --urlbarView-item-block-padding: 6px;
-  display: flex;
-  align-items: center;
-  height: 52px;
-  min-height: 52px;
-  box-sizing: border-box;
-  padding-block: var(--urlbarView-item-block-padding);
-  padding-inline: var(--urlbarView-item-inline-padding);
-  border-radius: 10px;
-  color: light-dark(rgba(0, 0, 0, 0.7), rgba(255, 255, 255, 0.7)) !important;
-  cursor: pointer;
-  transition: background-color 120ms ease-out;
+/* Items use .urlbarView-row – Zen handles spacing, padding, hover */
+
+/* Delete action wrap – position our button like Zen's urlbarView-action */
+.llm-conversation-container .llm-history-action-wrap {
+  margin-inline-start: auto !important;
+  display: flex !important;
+  align-items: center !important;
+  background: transparent !important;
 }
 
-.llm-conversation-container .llm-history-list-item:hover {
-  background-color: color-mix(in srgb, var(--zen-branding-bg-reverse, var(--zen-primary-color, #5b8def)) 5%, transparent 95%) !important;
+.llm-conversation-container .llm-history-action-wrap::after {
+  display: none !important;
 }
 
-.llm-conversation-container .llm-history-list-item:hover .llm-history-favicon {
-  background-color: color-mix(in srgb, var(--zen-branding-bg-reverse, var(--zen-primary-color, #5b8def)) 5%, transparent 95%) !important;
-}
-
-/* Row inner – flex row like urlbarView-row-inner */
-.llm-conversation-container .llm-history-list-row-inner {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  flex: 1;
-  min-width: 0;
-}
-
-/* No-wrap block – like .urlbarView-no-wrap */
-.llm-conversation-container .llm-history-list-no-wrap {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  position: relative;
-}
-
-/* Favicon area – matches .urlbarView-favicon */
-.llm-conversation-container .llm-history-favicon {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  margin-inline-start: 0;
-  margin-inline-end: 10px;
-  padding: 5px;
-  border-radius: 4px;
-  box-sizing: border-box;
-}
-
-.llm-conversation-container .llm-history-favicon img {
-  width: 14px;
-  height: 14px;
-  object-fit: contain;
-  -moz-context-properties: fill, fill-opacity;
-  fill: currentColor;
-}
-
-/* Title + timestamp block */
-.llm-conversation-container .llm-history-list-meta {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 0;
-  line-height: 1.25;
-}
-
-/* Title – exact .urlbarView-title */
-.llm-conversation-container .llm-history-list-title {
-  font-size: 14px !important;
-  font-weight: 500 !important;
-  line-height: 1.25;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Timestamp – matches .urlbarView-url / secondary text */
-.llm-conversation-container .llm-history-list-subtitle {
-  font-size: 13px !important;
-  font-weight: 500 !important;
-  line-height: 1.25;
-  color: light-dark(#4f4f4f, #aaa) !important;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Actions – like .urlbarView-action with margin-left: auto */
-.llm-conversation-container .llm-history-list-actions {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  margin-inline-start: auto;
-  margin-inline-end: 5px;
-}
-
-/* Base button style – compact to match row height */
-.llm-conversation-container .llm-history-button {
+/* Delete button – compact, soft danger */
+.llm-conversation-container .llm-history-delete-button {
   font-size: 12px;
   font-weight: 500;
-  line-height: 1.3;
   padding: 4px 10px;
   border-radius: 4px;
-  border: 1px solid light-dark(rgba(0, 0, 0, 0.12), rgba(255, 255, 255, 0.15));
-  background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08));
-  color: light-dark(rgba(0, 0, 0, 0.85), rgba(255, 255, 255, 0.9));
+  border: 1px solid color-mix(in srgb, #c62828 22%, transparent);
+  background: color-mix(in srgb, #c62828 10%, transparent);
+  color: light-dark(rgba(0.6, 0, 0, 0.95), rgba(255, 200, 200, 0.95));
   cursor: pointer;
   -moz-appearance: none;
   appearance: none;
   transition: all 0.15s ease;
 }
 
-.llm-conversation-container .llm-history-button:hover {
-  background: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.15));
-  border-color: light-dark(rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.25));
-}
-
-.llm-conversation-container .llm-history-button:active {
-  transform: translateY(0);
-  box-shadow: none;
-}
-
-/* Delete – soft danger, same shape and motion */
-.llm-conversation-container .llm-history-delete-button {
-  background: color-mix(in srgb, #c62828 10%, light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.08)));
-  border-color: color-mix(in srgb, #c62828 22%, light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12)));
-  color: light-dark(rgba(0.6, 0, 0, 0.95), rgba(255, 200, 200, 0.95));
-}
-
 .llm-conversation-container .llm-history-delete-button:hover {
-  background: color-mix(in srgb, #c62828 18%, light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12)));
-  border-color: color-mix(in srgb, #c62828 35%, light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2)));
+  background: color-mix(in srgb, #c62828 18%, transparent);
+  border-color: color-mix(in srgb, #c62828 35%, transparent);
 }
