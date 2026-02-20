@@ -760,6 +760,7 @@
   justify-content: flex-end;
   gap: 6px;
   margin-inline-start: auto;
+  margin-inline-end: 5px;
 }
 
 /* Base button style – compact to match row height */
