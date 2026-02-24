@@ -38,6 +38,9 @@
     ANIMATION_GLOW_DURATION: 1000,    // ms for pill glow animation
     SCROLL_DELAY: 50,                 // ms delay before scrolling to pills
     SCROLL_DELAY_MESSAGE: 10,         // ms delay before scrolling after user message
+    RETRY_MAX_ATTEMPTS: 3,            // Max retries for API calls
+    RETRY_BASE_DELAY_MS: 1000,        // Base delay for exponential backoff (ms)
+    RETRY_MAX_DELAY_MS: 10000,        // Cap on backoff delay (ms)
   };
 
   // Ollama Web Search/Fetch API endpoints
@@ -137,6 +140,73 @@
     scriptSecurityManager: scriptSecurityManager,
     scriptloader: scriptLoader
   };
+
+  // Retryable HTTP statuses (transient server/rate-limit errors)
+  const RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+
+  /**
+   * Fetch with retry and exponential backoff.
+   * Retries on network errors and transient HTTP statuses (429, 5xx).
+   * Does not retry on AbortError or client errors (4xx except 429).
+   */
+  async function fetchWithRetry(url, options = {}, signal = null) {
+    const maxAttempts = LIMITS.RETRY_MAX_ATTEMPTS;
+    const baseDelay = LIMITS.RETRY_BASE_DELAY_MS;
+    const maxDelay = LIMITS.RETRY_MAX_DELAY_MS;
+    let lastError = null;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const response = await fetch(url, { ...options, signal });
+        if (response.ok) return response;
+
+        if (RETRYABLE_STATUSES.includes(response.status) && attempt < maxAttempts - 1) {
+          await response.text().catch(() => ""); // Drain body to release connection
+          const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+          log(`API error ${response.status}, retrying in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`);
+          await sleepWithAbort(delay, signal);
+          continue;
+        }
+
+        const errorText = await response.text().catch(() => "");
+        lastError = new Error(`API error: ${response.status} ${response.statusText}${errorText ? " — " + errorText.slice(0, 200) : ""}`);
+        throw lastError;
+      } catch (err) {
+        if (err.name === "AbortError") throw err;
+
+        const isRetryable =
+          err.name === "TypeError" ||
+          (err.message && /network|fetch|failed|timeout|connection|refused/i.test(err.message));
+
+        if (isRetryable && attempt < maxAttempts - 1) {
+          const delay = Math.min(baseDelay * Math.pow(2, attempt), maxDelay);
+          log(`Request failed (${err.message}), retrying in ${delay}ms (attempt ${attempt + 1}/${maxAttempts})`);
+          await sleepWithAbort(delay, signal);
+          lastError = err;
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw lastError || new Error("Request failed after retries");
+  }
+
+  function sleepWithAbort(ms, signal) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(resolve, ms);
+      if (signal) {
+        const onAbort = () => {
+          clearTimeout(t);
+          reject(new DOMException("Aborted", "AbortError"));
+        };
+        if (signal.aborted) {
+          onAbort();
+          return;
+        }
+        signal.addEventListener("abort", onAbort, { once: true });
+      }
+    });
+  }
 
   // ============================================
   // Global conversation history (IndexedDB)
@@ -777,17 +847,15 @@ Do NOT explain. Just reply with one word.`
 
       if (currentProvider.name === "Ollama") {
         // Ollama native API (non-streaming)
-        const response = await fetch(currentProvider.baseUrl, {
+        const response = await fetchWithRetry(currentProvider.baseUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             model: currentProvider.model,
             messages: classificationPrompt,
             stream: false
-          }),
-          signal
-        });
-        if (!response.ok) throw new Error(`Ollama classify error: ${response.status}`);
+          })
+        }, signal);
         const json = await response.json();
         responseText = (json.message?.content || "").trim().toUpperCase();
       } else {
@@ -801,7 +869,7 @@ Do NOT explain. Just reply with one word.`
           url += (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(currentProvider.apiKey);
         }
         const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${currentProvider.apiKey}` };
-        const response = await fetch(url, {
+        const response = await fetchWithRetry(url, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -810,10 +878,8 @@ Do NOT explain. Just reply with one word.`
             stream: false,
             max_tokens: 5,
             temperature: 0
-          }),
-          signal
-        });
-        if (!response.ok) throw new Error(`Classify API error: ${response.status}`);
+          })
+        }, signal);
         const json = await response.json();
         responseText = (json.choices?.[0]?.message?.content || "").trim().toUpperCase();
       }
@@ -2811,16 +2877,25 @@ Provide a direct, informative answer with citations:`;
 
       urlbar.removeAttribute("is-llm-thinking");
     } catch (error) {
+      logError("LLM request error:", error);
       if (error.name === "AbortError") {
         titleElement.textContent = "Request cancelled";
       } else {
-        logError("Error:", error);
-        // Show user-friendly message, keep details in console only
-        const isNetworkError = error.message?.includes("fetch") || error.message?.includes("network");
-        const isApiError = error.message?.includes("API error");
-        if (isNetworkError) {
+        const msg = (error?.message || String(error)).toLowerCase();
+        const statusMatch = msg.match(/api error:\s*(\d+)/);
+        const status = statusMatch ? parseInt(statusMatch[1], 10) : null;
+
+        if (status === 401 || status === 403) {
+          titleElement.textContent = "Invalid API key. Please check your settings and try again.";
+        } else if (status === 429) {
+          titleElement.textContent = "Rate limit exceeded. Please wait a moment and try again.";
+        } else if (status >= 500) {
+          titleElement.textContent = "Service temporarily unavailable. Please try again in a moment.";
+        } else if (status === 400 || status === 404) {
+          titleElement.textContent = "Request failed. Please try a different query.";
+        } else if (/network|fetch|connection|timeout|refused/i.test(msg)) {
           titleElement.textContent = "Connection error. Please check your network and try again.";
-        } else if (isApiError) {
+        } else if (/api error|invalid|unauthorized/i.test(msg)) {
           titleElement.textContent = "API request failed. Please check your API key and try again.";
         } else {
           titleElement.textContent = "Something went wrong. Please try again.";
@@ -2855,22 +2930,15 @@ Provide a direct, informative answer with citations:`;
 
     log(`Streaming request — URL: ${url}, Model: ${currentProvider.model}, Provider: ${currentProvider.name}, Messages: ${messages.length}`);
 
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       method: "POST",
       headers,
       body: JSON.stringify({
         model: currentProvider.model,
         messages,
         stream: true
-      }),
-      signal
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      logError(`API error response:`, errorText);
-      throw new Error(`API error: ${response.status} ${response.statusText}`);
-    }
+      })
+    }, signal);
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
