@@ -2831,19 +2831,21 @@ Provide a direct, informative answer with citations:`;
       titleElement.textContent = "Thinking...";
       
       // Prepare messages: language instruction first, then conversation (and search context if any)
+      // Strip non-API fields (e.g. sources) — providers only accept role + content
+      const toApiMessage = (m) => ({ role: m.role, content: m.content });
       const languageSystemMessage = { role: "system", content: LANGUAGE_SYSTEM_INSTRUCTION };
       let messagesToSend;
       if (searchContext) {
         const lastUserMessageIndex = conversationHistory.length - 1;
         messagesToSend = [
           languageSystemMessage,
-          ...conversationHistory.slice(0, lastUserMessageIndex),
+          ...conversationHistory.slice(0, lastUserMessageIndex).map(toApiMessage),
           { role: "system", content: searchContext },
-          conversationHistory[lastUserMessageIndex]
+          toApiMessage(conversationHistory[lastUserMessageIndex])
         ];
         log('Added web search context to messages');
       } else {
-        messagesToSend = [ languageSystemMessage, ...conversationHistory ];
+        messagesToSend = [ languageSystemMessage, ...conversationHistory.map(toApiMessage) ];
       }
       
       await streamResponse(messagesToSend, titleElement, abortController.signal);
