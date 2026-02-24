@@ -2531,14 +2531,15 @@ Provide a direct, informative answer with citations:`;
     container.addEventListener("mousedown", (e) => {
       const target = e.target;
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
-      
-      if (linkElement) {
-        log("Container mousedown - link detected, setting flag");
+      const citationMarker = target.classList?.contains('llm-citation-marker') ? target : target.closest('.llm-citation-marker');
+
+      if (linkElement || citationMarker) {
+        log("Container mousedown - link/citation detected, setting flag");
         isClickingLink = true;
         suppressNativeBlur();
         return;
       }
-      
+
       // Suppress native blur so the panel stays open during text selection
       suppressNativeBlur();
       isSelectingInContainer = true;
@@ -2555,9 +2556,10 @@ Provide a direct, informative answer with citations:`;
     container.addEventListener("mouseup", (e) => {
       const target = e.target;
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
-      
-      if (linkElement) {
-        return; // Link handler takes care of restoring blur
+      const citationMarker = target.classList?.contains('llm-citation-marker') ? target : target.closest('.llm-citation-marker');
+
+      if (linkElement || citationMarker) {
+        return; // Link/citation handler takes care of restoring blur
       }
       
       e.stopPropagation();
@@ -2575,7 +2577,81 @@ Provide a direct, informative answer with citations:`;
     
     container.addEventListener("click", (e) => {
       const target = e.target;
+      const citationMarker = target.classList?.contains('llm-citation-marker') ? target : target.closest('.llm-citation-marker');
       const linkElement = target.tagName === 'A' ? target : target.closest('a');
+
+      // Handle citation marker clicks (works for both streaming and history-loaded content)
+      if (citationMarker) {
+        e.preventDefault();
+        e.stopPropagation();
+        const url = citationMarker.dataset.url || (currentSearchSources && currentSearchSources[parseInt(citationMarker.dataset.source, 10) - 1]?.url);
+        if (url) {
+          try {
+            isClickingLink = true;
+            suppressNativeBlur();
+            const topWindow = window.top || window;
+            const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
+            if (browser && browser.addTab) {
+              browser.addTab(url, {
+                triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+                inBackground: true
+              });
+              log('Opened citation source in background:', url);
+            }
+            citationMarker.classList.add('llm-citation-marker-highlight');
+            setTimeout(() => citationMarker.classList.remove('llm-citation-marker-highlight'), LIMITS.ANIMATION_GLOW_DURATION);
+            setTimeout(() => {
+              const urlbarInput = document.getElementById("urlbar-input");
+              const urlbar = document.getElementById("urlbar");
+              if (urlbarInput && urlbar) {
+                urlbar.setAttribute("open", "true");
+                urlbarInput.focus();
+              }
+              isClickingLink = false;
+              restoreNativeBlur();
+            }, LIMITS.FOCUS_RESTORE_DELAY);
+          } catch (err) {
+            logError('Failed to open citation source:', err);
+            isClickingLink = false;
+            restoreNativeBlur();
+          }
+        }
+        return;
+      }
+
+      // Handle markdown links (for history-loaded content; streaming uses contentDiv handler)
+      if (linkElement && linkElement.href) {
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          const topWindow = window.top || window;
+          const browser = topWindow.gBrowser || topWindow.getBrowser?.() || window.gBrowser;
+          if (browser && browser.addTab) {
+            browser.addTab(linkElement.href, {
+              triggeringPrincipal: Services.scriptSecurityManager.getSystemPrincipal(),
+              inBackground: true
+            });
+          } else if (topWindow.open) {
+            topWindow.open(linkElement.href, '_blank');
+          }
+          setTimeout(() => {
+            const urlbarInput = document.getElementById("urlbar-input");
+            const urlbar = document.getElementById("urlbar");
+            if (urlbarInput && urlbar) {
+              urlbar.setAttribute("open", "true");
+              urlbarInput.focus();
+            }
+            isClickingLink = false;
+            restoreNativeBlur();
+          }, LIMITS.FOCUS_RESTORE_DELAY);
+        } catch (err) {
+          logError('Failed to open link:', err);
+          isClickingLink = false;
+          restoreNativeBlur();
+        }
+        return;
+      }
+
       if (!linkElement) {
         e.stopPropagation();
       }
