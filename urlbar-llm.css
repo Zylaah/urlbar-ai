@@ -406,8 +406,6 @@
 }
 
 .llm-message-content {
-  font-size: 13px;
-  line-height: 1.45;
   white-space: pre-wrap !important;
   word-wrap: break-word !important;
   overflow-wrap: break-word !important;
