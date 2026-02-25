@@ -1286,11 +1286,11 @@ Do NOT explain. Just reply with one word.`
           .replace(/<table>/g, '<table class="llm-markdown-table">')
           .replace(/<hr>/g, '<hr class="llm-markdown-hr">')
           .replace(/<a href=/g, '<a target="_blank" rel="noopener" href=');
-        const sanitized = DOMPurifyLib.sanitize(withClasses, {
+        const sanitized = DOMPurifyLib.sanitize(withClasses.trim(), {
           ALLOWED_URI_REGEXP: /^https?:\/\//i,
           ADD_ATTR: ["target", "rel", "data-source"]
         });
-        element.innerHTML = sanitized;
+        element.innerHTML = sanitized.trim();
       } catch (e) {
         logWarn("marked/DOMPurify render failed, using fallback:", e.message);
         renderMarkdownFallback(text, element);

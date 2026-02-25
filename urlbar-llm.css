@@ -439,6 +439,9 @@
 .llm-message-content p:last-child {
   margin-bottom: 0;
 }
+.llm-message-content p:empty {
+  display: none;
+}
 .llm-message-content > *:first-child {
   margin-top: 0 !important;
 }
