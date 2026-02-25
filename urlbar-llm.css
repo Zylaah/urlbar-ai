@@ -557,6 +557,14 @@
   margin: 12px 0;
 }
 
+/* Blockquote (CommonMark/GFM) */
+.llm-message-content blockquote {
+  margin: 8px 0;
+  padding: 4px 0 4px 12px;
+  border-left: 3px solid light-dark(rgba(0, 0, 0, 0.2), rgba(255, 255, 255, 0.25));
+  color: light-dark(rgba(0, 0, 0, 0.75), rgba(255, 255, 255, 0.8));
+}
+
 /* Also add table styles for the old urlbarView-row-llm context */
 .urlbarView-row-llm .urlbarView-title table {
   border-collapse: collapse;

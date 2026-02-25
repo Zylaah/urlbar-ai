@@ -748,6 +748,30 @@
     logWarn("Could not load Readability.js:", e.message);
     // Readability will be null, fallback extraction will be used
   }
+
+  // ============================================
+  // Load marked (markdown parser) and DOMPurify (sanitizer)
+  // ============================================
+  let markedLib = null;
+  let DOMPurifyLib = null;
+  try {
+    const currentScriptPath = Components.stack.filename;
+    const scriptDir = currentScriptPath.substring(0, currentScriptPath.lastIndexOf('/') + 1);
+    const vendorsDir = scriptDir + "vendors/";
+    Services.scriptloader.loadSubScript(vendorsDir + "marked.min.js");
+    Services.scriptloader.loadSubScript(vendorsDir + "purify.min.js");
+    markedLib = (typeof marked !== "undefined") ? marked : null;
+    DOMPurifyLib = (typeof DOMPurify !== "undefined") ? DOMPurify : null;
+    if (markedLib && DOMPurifyLib) {
+      log("Loaded marked and DOMPurify from", vendorsDir);
+    } else {
+      markedLib = null;
+      DOMPurifyLib = null;
+      logWarn("marked or DOMPurify failed to load, using fallback markdown parser");
+    }
+  } catch (e) {
+    logWarn("Could not load marked/DOMPurify:", e.message, "- using fallback markdown parser");
+  }
   
   function getPref(name, defaultValue) {
     try {
@@ -1243,42 +1267,57 @@ Do NOT explain. Just reply with one word.`
     urlbar.setAttribute("llm-hint", provider.name);
   }
 
-  // Render markdown as DOM elements (avoids XHTML parsing issues)
+  // Render markdown as DOM elements (uses marked + DOMPurify when available, fallback to custom parser)
   function renderMarkdownToElement(text, element) {
     if (!text) {
       element.textContent = "";
       return;
     }
-    
-    // Clear existing content
     element.textContent = "";
-    
-    // Split by code blocks and tables first to handle them separately
+
+    if (markedLib && DOMPurifyLib) {
+      // Use marked (CommonMark/GFM) + DOMPurify for robust, secure rendering
+      try {
+        const rawHtml = markedLib.parse(text, { gfm: true, breaks: true });
+        // Post-process: citation markers [1], [2] -> styled spans (favicon injected later)
+        const withCitations = rawHtml.replace(/\[(\d+)\](?!\()/g, '<span class="llm-citation-marker" data-source="$1"></span>');
+        // Add CSS classes and link attributes for our styling/behavior
+        const withClasses = withCitations
+          .replace(/<table>/g, '<table class="llm-markdown-table">')
+          .replace(/<hr>/g, '<hr class="llm-markdown-hr">')
+          .replace(/<a href=/g, '<a target="_blank" rel="noopener" href=');
+        const sanitized = DOMPurifyLib.sanitize(withClasses, {
+          ALLOWED_URI_REGEXP: /^https?:\/\//i,
+          ADD_ATTR: ["target", "rel", "data-source"]
+        });
+        element.innerHTML = sanitized;
+      } catch (e) {
+        logWarn("marked/DOMPurify render failed, using fallback:", e.message);
+        renderMarkdownFallback(text, element);
+      }
+    } else {
+      renderMarkdownFallback(text, element);
+    }
+  }
+
+  // Fallback markdown parser (custom regex-based) when marked/DOMPurify aren't available
+  function renderMarkdownFallback(text, element) {
     const parts = [];
     let lastIndex = 0;
-    
-    // Combined regex for code blocks and tables
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
     const tableRegex = /(?:^|\n)((?:\|[^\n]+\|\r?\n)+)/g;
-    
-    // First pass: extract code blocks
-    let codeMatches = [];
     let match;
+    let codeMatches = [];
     while ((match = codeBlockRegex.exec(text)) !== null) {
       codeMatches.push({ index: match.index, end: match.index + match[0].length, type: 'code', lang: match[1], content: match[2] });
     }
-    
-    // Second pass: extract tables (only if not inside code blocks)
     let tableMatches = [];
     while ((match = tableRegex.exec(text)) !== null) {
       const tableStart = match.index + (match[0].startsWith('\n') ? 1 : 0);
       const tableEnd = match.index + match[0].length;
-      
-      // Check if this table is inside a code block
       const insideCodeBlock = codeMatches.some(cb => tableStart >= cb.index && tableEnd <= cb.end);
       if (!insideCodeBlock) {
         const tableContent = match[1].trim();
-        // Validate it's actually a table (has at least 2 rows and separator row)
         const rows = tableContent.split('\n').filter(r => r.trim());
         if (rows.length >= 2) {
           const hasValidSeparator = rows.some(row => /^\|[\s\-:|]+\|$/.test(row.trim()));
@@ -1288,11 +1327,7 @@ Do NOT explain. Just reply with one word.`
         }
       }
     }
-    
-    // Combine and sort all matches
     const allMatches = [...codeMatches, ...tableMatches].sort((a, b) => a.index - b.index);
-    
-    // Build parts array
     for (const m of allMatches) {
       if (m.index > lastIndex) {
         parts.push({ type: 'text', content: text.slice(lastIndex, m.index) });
@@ -1300,36 +1335,26 @@ Do NOT explain. Just reply with one word.`
       parts.push(m);
       lastIndex = m.end;
     }
-    // Add remaining text
     if (lastIndex < text.length) {
       parts.push({ type: 'text', content: text.slice(lastIndex) });
     }
-    
-    // Render each part
     for (const part of parts) {
       if (part.type === 'code') {
         const pre = document.createElement('pre');
         const code = document.createElement('code');
-        if (part.lang) {
-          code.className = `language-${part.lang}`;
-        }
+        if (part.lang) code.className = `language-${part.lang}`;
         code.textContent = part.content.trim();
         pre.appendChild(code);
         element.appendChild(pre);
       } else if (part.type === 'table') {
         const table = parseMarkdownTable(part.content);
-        if (table) {
-          element.appendChild(table);
-        }
+        if (table) element.appendChild(table);
       } else {
-        // Parse inline markdown in text
         const span = document.createElement('span');
         span.innerHTML = parseInlineMarkdown(part.content);
         element.appendChild(span);
       }
     }
-    
-    // Don't attach individual link handlers - we'll use event delegation on the message element instead
   }
   
   // Parse markdown table and return a DOM table element
