@@ -500,6 +500,7 @@
 
     messageDiv.appendChild(contentDiv);
     if (sources && sources.length > 0) {
+      messageDiv.dataset.citationSources = JSON.stringify(sources);
       injectFaviconsIntoCitationMarkers(messageDiv, sources);
     }
     conversationContainer.appendChild(messageDiv);
@@ -534,11 +535,16 @@
     // Track this session so on deactivate we update it instead of creating a new one
     currentSessionId = session.id || null;
 
-    // Replace in-memory history (keep sources for assistant messages)
+    // Replace in-memory history (keep sources for assistant messages; normalize structure for compatibility)
     conversationHistory = session.messages.map((m) => {
       const out = { role: m.role, content: m.content };
       if (m.role === "assistant" && m.sources && m.sources.length > 0) {
-        out.sources = m.sources;
+        out.sources = m.sources.map((s) => ({
+          title: s.title,
+          url: s.url || s.href || s.link,
+          source: s.source,
+          index: s.index
+        })).filter((s) => s.url);
       }
       return out;
     });
@@ -2231,11 +2237,13 @@ Provide a direct, informative answer with citations:`;
     if (!messageElement.isConnected) {
       return; // Row was removed (e.g. user sent new message or deactivated)
     }
+    const getSourceUrl = (s) => s && (s.url || s.href || s.link || '');
     const domainForFavicon = (s) => {
       if (s && s.source) return s.source;
-      if (s && s.url) {
+      const url = getSourceUrl(s);
+      if (url) {
         try {
-          return new URL(s.url).hostname.replace(/^www\./, '');
+          return new URL(url).hostname.replace(/^www\./, '');
         } catch (e) {
           return '';
         }
@@ -2245,9 +2253,10 @@ Provide a direct, informative answer with citations:`;
     messageElement.querySelectorAll('.llm-citation-marker').forEach((marker) => {
       const idx = parseInt(marker.dataset.source, 10);
       const source = sources[idx - 1];
-      if (!source || !source.url) return;
-      marker.dataset.url = source.url;
-      marker.title = source.title || source.source || source.url;
+      const url = getSourceUrl(source);
+      if (!source || !url) return;
+      marker.dataset.url = url;
+      marker.title = source.title || source.source || url;
       const domain = domainForFavicon(source);
       if (!domain) return;
       const enc = encodeURIComponent(domain);
@@ -2627,7 +2636,19 @@ Provide a direct, informative answer with citations:`;
       if (citationMarker) {
         e.preventDefault();
         e.stopPropagation();
-        const url = citationMarker.dataset.url || (currentSearchSources && currentSearchSources[parseInt(citationMarker.dataset.source, 10) - 1]?.url);
+        let url = citationMarker.dataset.url ||
+          (currentSearchSources && currentSearchSources[parseInt(citationMarker.dataset.source, 10) - 1]?.url);
+        if (!url) {
+          const msgDiv = citationMarker.closest('.llm-message-assistant');
+          const stored = msgDiv?.dataset?.citationSources;
+          if (stored) {
+            try {
+              const sources = JSON.parse(stored);
+              const s = sources[parseInt(citationMarker.dataset.source, 10) - 1];
+              url = s && (s.url || s.href || s.link);
+            } catch (err) {}
+          }
+        }
         if (url) {
           try {
             isClickingLink = true;
@@ -2992,7 +3013,10 @@ Provide a direct, informative answer with citations:`;
         const rowToInject = streamingResultRow;
         const sourcesToInject = [...currentSearchSources];
         setTimeout(() => {
-          injectFaviconsIntoCitationMarkers(rowToInject, sourcesToInject);
+          if (rowToInject && rowToInject.isConnected) {
+            rowToInject.dataset.citationSources = JSON.stringify(sourcesToInject);
+            injectFaviconsIntoCitationMarkers(rowToInject, sourcesToInject);
+          }
         }, LIMITS.RENDER_DEBOUNCE + 20);
       }
 
