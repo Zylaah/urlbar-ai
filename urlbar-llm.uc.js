@@ -2228,7 +2228,20 @@ Provide a direct, informative answer with citations:`;
     if (!messageElement || !sources || sources.length === 0) {
       return;
     }
-    const domainForFavicon = (s) => (s && s.source) ? s.source : (s && s.url ? new URL(s.url).hostname.replace(/^www\./, '') : '');
+    if (!messageElement.isConnected) {
+      return; // Row was removed (e.g. user sent new message or deactivated)
+    }
+    const domainForFavicon = (s) => {
+      if (s && s.source) return s.source;
+      if (s && s.url) {
+        try {
+          return new URL(s.url).hostname.replace(/^www\./, '');
+        } catch (e) {
+          return '';
+        }
+      }
+      return '';
+    };
     messageElement.querySelectorAll('.llm-citation-marker').forEach((marker) => {
       const idx = parseInt(marker.dataset.source, 10);
       const source = sources[idx - 1];
@@ -2252,7 +2265,12 @@ Provide a direct, informative answer with citations:`;
         if (urlIndex < urls.length) {
           img.src = urls[urlIndex];
         } else {
-          img.style.display = 'none';
+          img.remove();
+          const fallback = document.createElement('span');
+          fallback.className = 'llm-citation-fallback';
+          fallback.textContent = idx;
+          fallback.title = marker.title || '';
+          marker.appendChild(fallback);
         }
       };
       marker.appendChild(img);
@@ -2968,10 +2986,13 @@ Provide a direct, informative answer with citations:`;
       
       log("Conversation now has", conversationHistory.length, "messages");
       
-      // Inject favicons only after streaming is complete and final DOM is rendered (deferred so no debounce can overwrite)
+      // Inject favicons only after streaming is complete and final DOM is rendered (deferred so no debounce can overwrite).
+      // Capture row and sources now – they get overwritten when the user sends another message, so the closure must use the captured values.
       if (currentSearchSources && currentSearchSources.length > 0) {
+        const rowToInject = streamingResultRow;
+        const sourcesToInject = [...currentSearchSources];
         setTimeout(() => {
-          injectFaviconsIntoCitationMarkers(streamingResultRow, currentSearchSources);
+          injectFaviconsIntoCitationMarkers(rowToInject, sourcesToInject);
         }, LIMITS.RENDER_DEBOUNCE + 20);
       }
 
