@@ -637,7 +637,8 @@
 
       const title = document.createElement("span");
       title.className = "llm-history-list-title";
-      title.textContent = session.title || "(untitled conversation)";
+      const rawTitle = session.title || "(untitled conversation)";
+      title.textContent = rawTitle.length > 50 ? rawTitle.slice(0, 50) + "…" : rawTitle;
       metaRow.appendChild(title);
 
       if (session.updatedAt || session.createdAt) {
