@@ -499,11 +499,11 @@
     renderMarkdownToElement(message, contentDiv);
 
     messageDiv.appendChild(contentDiv);
+    conversationContainer.appendChild(messageDiv);
     if (sources && sources.length > 0) {
       messageDiv.dataset.citationSources = JSON.stringify(sources);
       injectFaviconsIntoCitationMarkers(messageDiv, sources);
     }
-    conversationContainer.appendChild(messageDiv);
   }
 
   function loadSessionIntoCurrentConversation(session, urlbar, urlbarInput) {
