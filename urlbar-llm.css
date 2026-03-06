@@ -231,8 +231,23 @@
   list-style-type: disc;
 }
 
+.urlbarView-row-llm .urlbarView-title ol {
+  margin: 2px 0;
+  padding-left: 16px;
+  list-style-type: decimal;
+}
+
+.urlbarView-row-llm .urlbarView-title ul:last-child,
+.urlbarView-row-llm .urlbarView-title ol:last-child {
+  margin-bottom: 0;
+}
+
 .urlbarView-row-llm .urlbarView-title li {
   margin: 0 0 1px 0;
+}
+
+.urlbarView-row-llm .urlbarView-title li:last-child {
+  margin-bottom: 0;
 }
 
 .urlbarView-row-llm .urlbarView-title a {
@@ -457,12 +472,22 @@
   font-size: 11px;
 }
 
+/* Code block wrapper – contains pre + copy button */
+.llm-message-content .llm-code-block-wrapper {
+  position: relative;
+  margin: 2px 0;
+}
+
+.llm-message-content .llm-code-block-wrapper pre {
+  margin: 0;
+}
+
 .llm-message-content pre {
   background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
   padding: 6px 8px;
+  padding-top: 28px;
   border-radius: 4px;
   overflow-x: auto;
-  margin: 2px 0;
   border: 1px solid light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
 }
 
@@ -471,6 +496,27 @@
   padding: 0;
   font-size: 11px;
   line-height: 1.35;
+}
+
+.llm-message-content .llm-code-copy-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2));
+  background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
+  color: light-dark(rgba(0, 0, 0, 0.7), rgba(255, 255, 255, 0.75));
+  cursor: pointer;
+  -moz-appearance: none;
+  appearance: none;
+  transition: opacity 0.15s ease;
+}
+
+.llm-message-content .llm-code-copy-btn:hover {
+  opacity: 0.9;
+  background: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.15));
 }
 
 .llm-message-content strong {
@@ -515,6 +561,11 @@
   list-style-type: disc;
 }
 
+.llm-message-content ul:last-child,
+.llm-message-content ol:last-child {
+  margin-bottom: 0;
+}
+
 .llm-message-content ol {
   list-style-type: decimal;
 }
@@ -522,6 +573,11 @@
 .llm-message-content li {
   margin: 0 0 1px 0;
 }
+
+.llm-message-content li:last-child {
+  margin-bottom: 0;
+}
+
 
 /* Markdown tables – compact */
 .llm-markdown-table {

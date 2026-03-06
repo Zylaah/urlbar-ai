@@ -1298,6 +1298,7 @@ Do NOT explain. Just reply with one word.`
           ADD_ATTR: ["target", "rel", "data-source"]
         });
         element.innerHTML = sanitized.trim();
+        attachCopyButtonsToCodeBlocks(element);
       } catch (e) {
         logWarn("marked/DOMPurify render failed, using fallback:", e.message);
         renderMarkdownFallback(text, element);
@@ -1305,6 +1306,46 @@ Do NOT explain. Just reply with one word.`
     } else {
       renderMarkdownFallback(text, element);
     }
+  }
+
+  function attachCopyButtonsToCodeBlocks(container) {
+    if (!container) return;
+    container.querySelectorAll('pre').forEach((pre) => {
+      const code = pre.querySelector('code');
+      if (!code) return;
+      const wrapper = document.createElement('div');
+      wrapper.className = 'llm-code-block-wrapper';
+      pre.parentNode.insertBefore(wrapper, pre);
+      wrapper.appendChild(pre);
+      const btn = document.createElement('button');
+      btn.className = 'llm-code-copy-btn';
+      btn.textContent = 'Copy';
+      btn.type = 'button';
+      btn.setAttribute('aria-label', 'Copy code');
+      btn.addEventListener('click', () => {
+        const text = code.textContent || '';
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text).then(() => {
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+          }).catch(() => {});
+        } else {
+          try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.left = '-9999px';
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            btn.textContent = 'Copied!';
+            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+          } catch (err) {}
+        }
+      });
+      wrapper.appendChild(btn);
+    });
   }
 
   // Fallback markdown parser (custom regex-based) when marked/DOMPurify aren't available
@@ -1362,6 +1403,7 @@ Do NOT explain. Just reply with one word.`
         element.appendChild(span);
       }
     }
+    attachCopyButtonsToCodeBlocks(element);
   }
   
   // Parse markdown table and return a DOM table element
