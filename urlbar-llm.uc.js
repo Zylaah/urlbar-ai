@@ -1266,6 +1266,21 @@ Do NOT explain. Just reply with one word.`
       log("Outside click detected, deactivating LLM mode and resetting urlbar");
       deactivateLLMMode(urlbar, urlbarInput, true);
     }, true);
+
+    // Window blur: when browser loses focus (user clicks another app), ensure cleanup.
+    // Fixes stuck state on first load when urlbar blur can miss or race.
+    window.addEventListener("blur", function windowBlurHandler() {
+      if (!isLLMMode || isClickingLink || isSelectingInContainer) return;
+      const u = document.getElementById("urlbar");
+      const ui = document.getElementById("urlbar-input");
+      if (!u || !ui) return;
+      setTimeout(() => {
+        if (isLLMMode && document.activeElement !== ui) {
+          log("Window blur deactivating LLM mode");
+          deactivateLLMMode(u, ui, true);
+        }
+      }, LIMITS.BLUR_DELAY + 50);
+    });
   }
 
   function showActivationHint(urlbar, providerKey) {
@@ -2554,7 +2569,12 @@ Provide a direct, informative answer with citations:`;
     } else {
       urlbarInput.value = "";
     }
-    
+
+    // Always remove floating/breakout state – prevents urlbar stuck "half-floating"
+    // when blur cleanup runs before gURLBar is ready (e.g. on first load)
+    urlbar.removeAttribute("breakout-extend");
+    urlbar.removeAttribute("open");
+
     log("Deactivated");
   }
 
