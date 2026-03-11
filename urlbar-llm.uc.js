@@ -710,6 +710,9 @@
             urlbarViewBodyInner.style.display = "none";
           }
         }
+
+        // Refocus input so blur/dismiss works correctly (focus was on Delete button)
+        urlbarInput.focus();
       });
 
       /* Click on row (not Delete) opens conversation – matches Zen suggestion behavior */
