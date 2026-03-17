@@ -485,7 +485,6 @@
 .llm-message-content pre {
   background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
   padding: 6px 8px;
-  padding-top: 28px;
   border-radius: 4px;
   overflow-x: auto;
   border: 1px solid light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
@@ -498,25 +497,40 @@
   line-height: 1.35;
 }
 
+/* Copy button – floats over top-right, icon via CSS (reliable in Firefox chrome) */
 .llm-message-content .llm-code-copy-btn {
   position: absolute;
-  top: 4px;
-  right: 4px;
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 3px;
+  top: 6px;
+  right: 6px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 22px;
+  padding: 0;
   border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2));
-  background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
+  border-radius: 4px;
+  background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24'%3E%3Cpath fill='%23777' d='M15.24 2h-3.894c-1.764 0-3.162 0-4.255.148c-1.126.152-2.037.472-2.755 1.193c-.719.721-1.038 1.636-1.189 2.766C3 7.205 3 8.608 3 10.379v5.838c0 1.508.92 2.8 2.227 3.342c-.067-.91-.067-2.185-.067-3.247v-5.01c0-1.281 0-2.386.118-3.27c.127-.948.413-1.856 1.147-2.593s1.639-1.024 2.583-1.152c.88-.118 1.98-.118 3.257-.118h3.07c1.276 0 2.374 0 3.255.118A3.6 3.6 0 0 0 15.24 2'/%3E%3Cpath fill='%23777' d='M6.6 11.397c0-2.726 0-4.089.844-4.936c.843-.847 2.2-.847 4.916-.847h2.88c2.715 0 4.073 0 4.917.847S21 8.671 21 11.397v4.82c0 2.726 0 4.089-.843 4.936c-.844.847-2.202.847-4.917.847h-2.88c-2.715 0-4.073 0-4.916-.847c-.844-.847-.844-2.21-.844-4.936z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 14px 14px;
   color: light-dark(rgba(0, 0, 0, 0.7), rgba(255, 255, 255, 0.75));
   cursor: pointer;
   -moz-appearance: none;
   appearance: none;
-  transition: opacity 0.15s ease;
+  font-size: 10px;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.llm-message-content .llm-code-copy-btn.llm-copy-copied {
+  background-image: none;
 }
 
 .llm-message-content .llm-code-copy-btn:hover {
-  opacity: 0.9;
-  background: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.15));
+  opacity: 0.95;
+  background-color: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.15));
 }
 
 .llm-message-content strong {

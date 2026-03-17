@@ -1337,16 +1337,21 @@ Do NOT explain. Just reply with one word.`
       wrapper.appendChild(pre);
       const btn = document.createElement('button');
       btn.className = 'llm-code-copy-btn';
-      btn.textContent = 'Copy';
       btn.type = 'button';
       btn.setAttribute('aria-label', 'Copy code');
+      wrapper.insertBefore(btn, pre);
       btn.addEventListener('click', () => {
         const text = code.textContent || '';
+        const showCopied = () => {
+          btn.classList.add('llm-copy-copied');
+          btn.textContent = 'Copied!';
+          setTimeout(() => {
+            btn.classList.remove('llm-copy-copied');
+            btn.textContent = '';
+          }, 1500);
+        };
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(() => {
-            btn.textContent = 'Copied!';
-            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
-          }).catch(() => {});
+          navigator.clipboard.writeText(text).then(showCopied).catch(() => {});
         } else {
           try {
             const ta = document.createElement('textarea');
@@ -1357,12 +1362,11 @@ Do NOT explain. Just reply with one word.`
             ta.select();
             document.execCommand('copy');
             document.body.removeChild(ta);
-            btn.textContent = 'Copied!';
-            setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+            showCopied();
           } catch (err) {}
         }
       });
-      wrapper.appendChild(btn);
+      wrapper.insertBefore(btn, pre);
     });
   }
 
