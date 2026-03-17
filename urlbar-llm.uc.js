@@ -1303,7 +1303,7 @@ Do NOT explain. Just reply with one word.`
     if (markedLib && DOMPurifyLib) {
       // Use marked (CommonMark/GFM) + DOMPurify for robust, secure rendering
       try {
-        const rawHtml = markedLib.parse(text, { gfm: true, breaks: true });
+        const rawHtml = markedLib.parse(text, { gfm: true, breaks: false });
         // Post-process: citation markers [1], [2] -> styled spans (favicon injected later)
         const withCitations = rawHtml.replace(/\[(\d+)\](?!\()/g, '<span class="llm-citation-marker" data-source="$1"></span>');
         // Add CSS classes and link attributes for our styling/behavior
