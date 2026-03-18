@@ -845,6 +845,36 @@
   }
 
   /**
+   * Detects when the user explicitly asks to search (e.g. "Tu peux chercher sur internet?")
+   */
+  function isExplicitSearchRequest(query) {
+    const t = query.trim().toLowerCase();
+    const patterns = [
+      /\b(cherche|search|recherche)\s+(sur\s+)?(internet|le\s+web|the\s+web)/i,
+      /\b(tu\s+peux|can\s+you|pourrais[- ]tu)\s+chercher/i,
+      /\b(can\s+you|could\s+you)\s+search\s+(the\s+)?(internet|web)/i,
+      /\blook\s+it\s+up\b/i,
+      /\b(fais|do)\s+une\s+recherche\b/i,
+    ];
+    return patterns.some((re) => re.test(t));
+  }
+
+  /**
+   * Heuristic: queries that look like lookups (specific person, thing, etc.)
+   * The classifier often returns ANSWER for these, but the model then says it doesn't know.
+   */
+  function looksLikeLookupQuery(query) {
+    const t = query.trim().toLowerCase();
+    const lookupPatterns = [
+      /^(qui est|who is|who's)\b/i,
+      /^(qu'est[- ]ce que|c'est quoi|what is|what's)\b/i,
+      /^(informe[- ]toi|informez[- ]vous|cherche|search for|look up|find (info|information) about)\b/i,
+      /^(biographie|biography|bio) (de|of|sur|about)\b/i,
+    ];
+    return lookupPatterns.some((re) => re.test(t));
+  }
+
+  /**
    * LLM-based web search classification
    * Asks the model itself whether the question is within its knowledge scope.
    * If not, triggers a web search. This replaces pure heuristic detection.
@@ -856,19 +886,25 @@
       return false;
     }
 
+    // Heuristic override: "Qui est X", "Who is X", etc. often get ANSWER but the model then says it doesn't know
+    if (looksLikeLookupQuery(query)) {
+      log('Lookup-style query, forcing web search:', query);
+      return true;
+    }
+
     // Ask the LLM to classify the query
     log('Asking model to classify query for web search need:', query);
 
     const classificationPrompt = [
       {
         role: "system",
-        content: `You are a classifier. The user will give you a question or request. You must decide whether you can answer it confidently and accurately from your own training knowledge, or whether it requires up-to-date or real-time information from the web (e.g. current events, live prices, recent news, very specific/niche facts you're unsure about, information after your knowledge cutoff).
+        content: `You are a classifier. The user will give you a question or request. Decide whether you can answer it confidently and accurately from your own training knowledge, or whether it requires web search.
 
 Reply with ONLY one word:
-- "SEARCH" if you need web search to answer accurately
-- "ANSWER" if you can answer confidently from your own knowledge
+- "SEARCH" if: the question is about a specific person (named individual), niche/obscure topic, current events, recent news, things you might not have detailed info about, or when in doubt
+- "ANSWER" ONLY if you are very confident you have accurate, detailed information (e.g. well-known historical figures, common knowledge facts)
 
-Do NOT explain. Just reply with one word.`
+When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
       },
       {
         role: "user",
@@ -2999,20 +3035,33 @@ Provide a direct, informative answer with citations:`;
       
       // Ask the LLM itself whether the query is within its knowledge scope
       let needsSearch = false;
+      let searchQuery = query;
       if (isWebSearchEnabled() && supportsWebSearch) {
         const isFollowUp = conversationHistory.length > 1;
-        // Show evaluating status while the model classifies
-        titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Evaluating...</span>';
-        needsSearch = await queryNeedsWebSearchLLM(query, isFollowUp, abortController.signal);
+
+        // Follow-up where user explicitly asks to search: use the first user message as search query
+        if (isFollowUp && isExplicitSearchRequest(query)) {
+          const firstUserMsg = conversationHistory.find((m) => m.role === "user");
+          if (firstUserMsg && firstUserMsg.content && firstUserMsg.content.trim().length > 0) {
+            needsSearch = true;
+            searchQuery = firstUserMsg.content.trim();
+            log('Explicit search request on follow-up, using first user message as query:', searchQuery);
+          }
+        }
+
+        if (!needsSearch) {
+          titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Evaluating...</span>';
+          needsSearch = await queryNeedsWebSearchLLM(query, isFollowUp, abortController.signal);
+        }
       }
-      
+
       if (needsSearch) {
         // Show searching status with spinner
         titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Searching...</span>';
-        
-        log('Web search triggered for query:', query);
+
+        log('Web search triggered for query:', searchQuery);
         const startTime = Date.now();
-        const searchResults = await searchWeb(query, LIMITS.MAX_SEARCH_RESULTS, providerKey);
+        const searchResults = await searchWeb(searchQuery, LIMITS.MAX_SEARCH_RESULTS, providerKey);
         
         if (searchResults && searchResults.length > 0) {
           // Update status - fetching content
@@ -3025,7 +3074,7 @@ Provide a direct, informative answer with citations:`;
           searchResultsForDisplay = resultsWithContent;
           currentSearchSources = resultsWithContent;
           
-          searchContext = formatSearchResultsForLLM(resultsWithContent, query);
+          searchContext = formatSearchResultsForLLM(resultsWithContent, searchQuery);
           log('Web search completed in', Date.now() - startTime, 'ms total');
         } else {
           log('Web search returned no results');
