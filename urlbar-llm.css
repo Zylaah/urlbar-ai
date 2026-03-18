@@ -174,91 +174,6 @@
   display: none !important;
 }
 
-/* Markdown formatting styles (legacy inline result) – compact */
-.urlbarView-row-llm .urlbarView-title code {
-  background-color: color-mix(in srgb, var(--zen-primary-color) 10%, transparent 90%);
-  padding: 1px 3px;
-  border-radius: 3px;
-  font-family: "Cascadia Code", "Fira Code", "Monaco", "Consolas", monospace;
-  font-size: 12px;
-}
-
-.urlbarView-row-llm .urlbarView-title pre {
-  background-color: color-mix(in srgb, var(--zen-primary-color) 8%, transparent 92%);
-  padding: 6px 8px;
-  border-radius: 4px;
-  overflow-x: auto;
-  margin: 2px 0;
-}
-
-.urlbarView-row-llm .urlbarView-title pre code {
-  background-color: transparent;
-  padding: 0;
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.urlbarView-row-llm .urlbarView-title strong {
-  font-weight: 600;
-  color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.9));
-}
-
-.urlbarView-row-llm .urlbarView-title em {
-  font-style: italic;
-}
-
-.urlbarView-row-llm .urlbarView-title h1,
-.urlbarView-row-llm .urlbarView-title h2,
-.urlbarView-row-llm .urlbarView-title h3,
-.urlbarView-row-llm .urlbarView-title h4,
-.urlbarView-row-llm .urlbarView-title h5,
-.urlbarView-row-llm .urlbarView-title h6 {
-  font-weight: 600;
-  margin: 4px 0 2px 0;
-  color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.9));
-}
-
-.urlbarView-row-llm .urlbarView-title h1 { font-size: 15px; }
-.urlbarView-row-llm .urlbarView-title h2 { font-size: 14px; }
-.urlbarView-row-llm .urlbarView-title h3,
-.urlbarView-row-llm .urlbarView-title h4,
-.urlbarView-row-llm .urlbarView-title h5,
-.urlbarView-row-llm .urlbarView-title h6 { font-size: 13px; }
-
-.urlbarView-row-llm .urlbarView-title ul {
-  margin: 2px 0;
-  padding-left: 16px;
-  list-style-type: disc;
-}
-
-.urlbarView-row-llm .urlbarView-title ol {
-  margin: 2px 0;
-  padding-left: 16px;
-  list-style-type: decimal;
-}
-
-.urlbarView-row-llm .urlbarView-title ul:last-child,
-.urlbarView-row-llm .urlbarView-title ol:last-child {
-  margin-bottom: 0;
-}
-
-.urlbarView-row-llm .urlbarView-title li {
-  margin: 0 0 1px 0;
-}
-
-.urlbarView-row-llm .urlbarView-title li:last-child {
-  margin-bottom: 0;
-}
-
-.urlbarView-row-llm .urlbarView-title a {
-  color: var(--zen-primary-color);
-  text-decoration: none;
-}
-
-.urlbarView-row-llm .urlbarView-title a:hover {
-  text-decoration: underline;
-}
-
 /* Thinking/Streaming Indicator - Only if animations enabled */
 @media -moz-pref("extension.urlbar-llm.animations-enabled") {
   #urlbar[is-llm-thinking="true"] .urlbar-input-container::after {
@@ -421,7 +336,6 @@
 }
 
 .llm-message-content {
-  white-space: pre-wrap !important;
   word-wrap: break-word !important;
   overflow-wrap: break-word !important;
   user-select: text !important;
@@ -447,58 +361,200 @@
   color: inherit;
 }
 
-/* Message content markdown – compact chatbot style */
-.llm-message-content p {
-  margin: 0 0 4px 0;
+/* Message content markdown – adapted from github-markdown-css (BrowseBot/vertex-mods) */
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) {
+  --base-size-4: 0.2rem;
+  --base-size-8: 0.35rem;
+  --base-size-16: 0.5rem;
+  --base-size-24: 0.65rem;
+  --base-size-40: 1.2rem;
+  --base-text-weight-semibold: 600;
+  --fontStack-monospace: "Cascadia Code", "Fira Code", "Monaco", "Consolas", Liberation Mono, monospace;
+  --fgColor-accent: light-dark(var(--zen-primary-color), #88aaff);
 }
-.llm-message-content p:last-child {
-  margin-bottom: 0;
+@media (prefers-color-scheme: dark) {
+  :is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) {
+    --fgColor-default: #f0f6fc;
+    --fgColor-muted: #9198a1;
+    --fgColor-accent: #88aaff;
+    --bgColor-default: #0d1117;
+    --bgColor-muted: #151b23;
+    --bgColor-neutral-muted: #656c7633;
+    --borderColor-default: #3d444d;
+    --borderColor-muted: #3d444db3;
+  }
 }
-.llm-message-content p:empty {
+@media (prefers-color-scheme: light) {
+  :is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) {
+    --fgColor-default: #1f2328;
+    --fgColor-muted: #59636e;
+    --fgColor-accent: var(--zen-primary-color, #0969da);
+    --bgColor-default: #ffffff;
+    --bgColor-muted: #f6f8fa;
+    --bgColor-neutral-muted: #818b981f;
+    --borderColor-default: #d1d9e0;
+    --borderColor-muted: #d1d9e0b3;
+  }
+}
+
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) {
+  margin: 0;
+  color: var(--fgColor-default);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: normal !important;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) a {
+  color: var(--fgColor-accent) !important;
+  text-decoration: none;
+  cursor: pointer !important;
+  pointer-events: auto !important;
+  position: relative !important;
+  z-index: 1000 !important;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) a:hover {
+  text-decoration: underline;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) b,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) strong {
+  font-weight: var(--base-text-weight-semibold, 600);
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h1,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h2,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h3,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
+  margin-top: var(--base-size-24);
+  margin-bottom: var(--base-size-16);
+  font-weight: var(--base-text-weight-semibold, 600);
+  line-height: 1.25;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h1 {
+  font-size: 15px;
+  margin-top: 0;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid var(--borderColor-muted);
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h2 {
+  font-size: 14px;
+  padding-bottom: 0.2em;
+  border-bottom: 1px solid var(--borderColor-muted);
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h3,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
+  font-size: 13px;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
+  color: var(--fgColor-muted);
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) p {
+  margin-top: 0;
+  margin-bottom: 6px;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) p:empty {
   display: none;
 }
-.llm-message-content > *:first-child {
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:first-child {
   margin-top: 0 !important;
 }
-.llm-message-content > *:last-child {
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:last-child {
   margin-bottom: 0 !important;
 }
-
-.llm-message-content code {
-  background-color: light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12));
-  padding: 1px 3px;
-  border-radius: 3px;
-  font-family: "Cascadia Code", "Fira Code", "Monaco", "Consolas", monospace;
-  font-size: 11px;
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) blockquote {
+  margin: 4px 0;
+  padding: 0 0.8em;
+  color: var(--fgColor-muted);
+  border-left: 0.25em solid var(--borderColor-default);
 }
-
-/* Code block wrapper – contains pre + copy button */
-.llm-message-content .llm-code-block-wrapper {
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) ul,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) ol {
+  margin-top: 0;
+  margin-bottom: 6px;
+  padding-left: 1.5em;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) ul:last-child,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) ol:last-child {
+  margin-bottom: 0;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) li {
+  margin: 0 0 2px 0;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) li:last-child {
+  margin-bottom: 0;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) code,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) tt {
+  font-family: var(--fontStack-monospace);
+  font-size: 11px;
+  padding: 0.15em 0.35em;
+  margin: 0;
+  white-space: break-spaces;
+  background-color: var(--bgColor-neutral-muted);
+  border-radius: 4px;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) pre {
+  margin: 2px 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--fgColor-default);
+  background-color: var(--bgColor-muted);
+  border-radius: 4px;
+  border: 1px solid var(--borderColor-muted);
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) pre code {
+  padding: 0;
+  font-size: inherit;
+  background: transparent;
+  border: 0;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table {
+  border-spacing: 0;
+  border-collapse: collapse;
+  margin: 4px 0;
+  font-size: 12px;
+  width: auto;
+  max-width: 100%;
+  overflow-x: auto;
+  display: block;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table th,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table td,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table th,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table td {
+  padding: 4px 8px;
+  border: 1px solid var(--borderColor-default);
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table th,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table th {
+  font-weight: 600;
+  background-color: var(--bgColor-muted);
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table tr:nth-child(2n),
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table tbody tr:nth-child(even) {
+  background-color: var(--bgColor-muted);
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) hr,
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-hr {
+  border: none;
+  border-top: 1px solid var(--borderColor-muted);
+  margin: 6px 0;
+  height: 0;
+  padding: 0;
+}
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper {
   position: relative;
   margin: 2px 0;
 }
-
-.llm-message-content .llm-code-block-wrapper pre {
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper pre {
   margin: 0;
 }
-
-.llm-message-content pre {
-  background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
-  padding: 6px 8px;
-  border-radius: 4px;
-  overflow-x: auto;
-  border: 1px solid light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
-}
-
-.llm-message-content pre code {
-  background-color: transparent;
-  padding: 0;
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-/* Copy button – floats over top-right, icon via CSS (reliable in Firefox chrome) */
-.llm-message-content .llm-code-copy-btn {
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -509,164 +565,23 @@
   width: 26px;
   height: 22px;
   padding: 0;
-  border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2));
+  border: 1px solid var(--borderColor-default);
   border-radius: 4px;
-  background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
+  background-color: var(--bgColor-muted);
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24'%3E%3Cpath fill='%23777' d='M15.24 2h-3.894c-1.764 0-3.162 0-4.255.148c-1.126.152-2.037.472-2.755 1.193c-.719.721-1.038 1.636-1.189 2.766C3 7.205 3 8.608 3 10.379v5.838c0 1.508.92 2.8 2.227 3.342c-.067-.91-.067-2.185-.067-3.247v-5.01c0-1.281 0-2.386.118-3.27c.127-.948.413-1.856 1.147-2.593s1.639-1.024 2.583-1.152c.88-.118 1.98-.118 3.257-.118h3.07c1.276 0 2.374 0 3.255.118A3.6 3.6 0 0 0 15.24 2'/%3E%3Cpath fill='%23777' d='M6.6 11.397c0-2.726 0-4.089.844-4.936c.843-.847 2.2-.847 4.916-.847h2.88c2.715 0 4.073 0 4.917.847S21 8.671 21 11.397v4.82c0 2.726 0 4.089-.843 4.936c-.844.847-2.202.847-4.917.847h-2.88c-2.715 0-4.073 0-4.916-.847c-.844-.847-.844-2.21-.844-4.936z'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: center;
   background-size: 14px 14px;
-  color: light-dark(rgba(0, 0, 0, 0.7), rgba(255, 255, 255, 0.75));
   cursor: pointer;
   -moz-appearance: none;
   appearance: none;
-  font-size: 10px;
   transition: opacity 0.15s ease, background-color 0.15s ease;
 }
-
-.llm-message-content .llm-code-copy-btn.llm-copy-copied {
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn.llm-copy-copied {
   background-image: none;
 }
-
-.llm-message-content .llm-code-copy-btn:hover {
+:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn:hover {
   opacity: 0.95;
-  background-color: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.15));
-}
-
-.llm-message-content strong {
-  font-weight: 600;
-}
-
-.llm-message-content a {
-  color: light-dark(var(--zen-primary-color), #88aaff) !important;
-  text-decoration: none !important;
-  cursor: pointer !important;
-  pointer-events: auto !important;
-  position: relative !important;
-  z-index: 1000 !important;
-}
-
-.llm-message-content a:hover {
-  text-decoration: underline !important;
-  opacity: 0.9 !important;
-}
-
-.llm-message-content h1,
-.llm-message-content h2,
-.llm-message-content h3,
-.llm-message-content h4,
-.llm-message-content h5,
-.llm-message-content h6 {
-  font-weight: 600;
-  margin: 6px 0 2px 0;
-  line-height: 1.3;
-}
-.llm-message-content h1 { font-size: 15px; }
-.llm-message-content h2 { font-size: 14px; }
-.llm-message-content h3,
-.llm-message-content h4,
-.llm-message-content h5,
-.llm-message-content h6 { font-size: 13px; }
-
-.llm-message-content ul,
-.llm-message-content ol {
-  margin: 2px 0;
-  padding-left: 16px;
-  list-style-type: disc;
-}
-
-.llm-message-content ul:last-child,
-.llm-message-content ol:last-child {
-  margin-bottom: 0;
-}
-
-.llm-message-content ol {
-  list-style-type: decimal;
-}
-
-.llm-message-content li {
-  margin: 0 0 1px 0;
-}
-
-.llm-message-content li:last-child {
-  margin-bottom: 0;
-}
-
-
-/* Markdown tables – compact */
-.llm-markdown-table {
-  border-collapse: collapse;
-  margin: 4px 0;
-  font-size: 12px;
-  width: auto;
-  max-width: 100%;
-  overflow-x: auto;
-  display: block;
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.llm-markdown-table thead {
-  background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
-}
-
-.llm-markdown-table th,
-.llm-markdown-table td {
-  border: 1px solid light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12));
-  padding: 4px 8px;
-  text-align: left;
-}
-
-.llm-markdown-table th {
-  font-weight: 600;
-  color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.95));
-}
-
-.llm-markdown-table td {
-  color: light-dark(rgba(0, 0, 0, 0.8), rgba(255, 255, 255, 0.85));
-}
-
-.llm-markdown-table tbody tr:nth-child(even) {
-  background-color: light-dark(rgba(0, 0, 0, 0.02), rgba(255, 255, 255, 0.04));
-}
-
-.llm-markdown-table tbody tr:hover {
-  background-color: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06));
-}
-
-/* Horizontal rule */
-.llm-markdown-hr {
-  border: none;
-  border-top: 1px solid light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.12));
-  margin: 6px 0;
-}
-
-/* Blockquote – compact */
-.llm-message-content blockquote {
-  margin: 4px 0;
-  padding: 2px 0 2px 10px;
-  border-left: 3px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.2));
-  color: light-dark(rgba(0, 0, 0, 0.7), rgba(255, 255, 255, 0.75));
-  font-size: 12px;
-}
-
-/* Table styles for legacy urlbarView-row-llm context */
-.urlbarView-row-llm .urlbarView-title table {
-  border-collapse: collapse;
-  margin: 4px 0;
-  font-size: 12px;
-}
-
-.urlbarView-row-llm .urlbarView-title th,
-.urlbarView-row-llm .urlbarView-title td {
-  border: 1px solid light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.12));
-  padding: 4px 8px;
-  text-align: left;
-}
-
-.urlbarView-row-llm .urlbarView-title th {
-  background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.1));
-  font-weight: 600;
 }
 
 /* ============================================
