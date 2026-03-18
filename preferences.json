@@ -31,28 +31,20 @@
     "property": "extension.urlbar-llm.mistral-model",
     "label": "Mistral Model",
     "type": "dropdown",
-    "defaultValue": "mistral-medium-latest",
+    "defaultValue": "mistral-large-2512",
     "description": "Select the Mistral model to use.",
     "options": [
       {
-        "value": "mistral-large-latest",
-        "label": "Mistral Large Latest"
+        "value": "mistral-large-2512",
+        "label": "Mistral Large 3"
       },
       {
-        "value": "mistral-medium-latest",
-        "label": "Mistral Medium Latest"
+        "value": "mistral-medium-2505",
+        "label": "Mistral Medium 3"
       },
       {
         "value": "mistral-small-latest",
         "label": "Mistral Small Latest"
-      },
-      {
-        "value": "pixtral-12b-2409",
-        "label": "Pixtral 12B"
-      },
-      {
-        "value": "mistral-7b-instruct",
-        "label": "Mistral 7B Instruct"
       }
     ],
     "conditions": [
@@ -84,9 +76,25 @@
     "property": "extension.urlbar-llm.openai-model",
     "label": "OpenAI Model",
     "type": "dropdown",
-    "defaultValue": "gpt-4",
+    "defaultValue": "gpt-5.3-chat-latest",
     "description": "Select the OpenAI model to use.",
     "options": [
+      {
+        "value": "gpt-5.3-chat-latest",
+        "label": "ChatGPT 5.3"
+      },
+      {
+        "value": "gpt-5.4",
+        "label": "GPT-5.4"
+      },
+      {
+        "value": "gpt-5.4-mini",
+        "label": "GPT-5.4 Mini"
+      },
+      {
+        "value": "gpt-5.4-nano",
+        "label": "GPT-5.4 Nano"
+      },
       {
         "value": "gpt-4o",
         "label": "GPT-4o"
@@ -141,9 +149,17 @@
     "property": "extension.urlbar-llm.gemini-model",
     "label": "Gemini Model",
     "type": "dropdown",
-    "defaultValue": "gemini-2.5-flash",
+    "defaultValue": "gemini-3.1-pro-preview",
     "description": "Select the Gemini model to use.",
     "options": [
+      {
+        "value": "gemini-3.1-pro-preview",
+        "label": "Gemini 3.1 Pro"
+      },
+      {
+        "value": "gemini-3.1-flash-lite-preview",
+        "label": "Gemini 3.1 Flash Lite"
+      },
       {
         "value": "gemini-2.5-flash",
         "label": "Gemini 2.5 Flash"

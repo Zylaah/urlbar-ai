@@ -54,13 +54,13 @@
         name: "Mistral",
         apiKey: "", // Set via about:config or prompt
         baseUrl: "https://api.mistral.ai/v1/chat/completions",
-        model: "mistral-medium-latest"
+        model: "mistral-large-2512"
       },
       openai: {
         name: "OpenAI",
         apiKey: "",
         baseUrl: "https://api.openai.com/v1/chat/completions",
-        model: "gpt-4"
+        model: "gpt-5.3-chat-latest"
       },
       ollama: {
         name: "Ollama",
@@ -72,7 +72,7 @@
         name: "Gemini",
         apiKey: "",
         baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai/",
-        model: "gemini-2.5-flash"
+        model: "gemini-3.1-pro-preview"
       }
     },
     ollamaWebSearch: {
