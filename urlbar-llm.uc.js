@@ -860,6 +860,61 @@
   }
 
   /**
+   * Strip common "please search the web" preambles so the search API gets a concise query.
+   * If no pattern matches, returns the trimmed original text.
+   * @param {string} rawQuery
+   * @returns {string}
+   */
+  function explicitFollowUpSearchQuery(rawQuery) {
+    let q = (rawQuery || "").trim();
+    if (!q) {
+      return "";
+    }
+    const stripPatterns = [
+      /^(please\s+)?(can\s+you|could\s+you|would\s+you)\s+search\s+(the\s+)?(internet|web)\s+(for\s+)?/i,
+      /^(please\s+)?(can\s+you|could\s+you)\s+(look\s+it\s+up|find\s+(info|information)\s+about)\s*/i,
+      /^(tu\s+peux|pourrais[- ]tu|veux[- ]tu)\s+chercher\s+(sur\s+)?(internet|le\s+web)\s*(pour\s+)?/i,
+      /^(fais|faites|do)\s+(une\s+)?recherche\s+(sur\s+)?/i,
+      /^search\s+(the\s+)?(internet|web)\s+(for\s+)?/i,
+      /^cherche\s+(sur\s+)?(internet|le\s+web)\s*(pour\s+)?/i,
+      /^recherche\s+(sur\s+)?(internet|le\s+web)\s*/i,
+      /^look\s+(it\s+)?up\s*:?\s*/i,
+      /^informe[- ]toi\s+(sur\s+)?/i,
+      /^informez[- ]vous\s+(sur\s+)?/i,
+    ];
+    for (const re of stripPatterns) {
+      const next = q.replace(re, "").trim();
+      if (next.length > 0 && next.length < q.length) {
+        return next;
+      }
+    }
+    return q;
+  }
+
+  /**
+   * Resolves the web search string for an explicit-search follow-up: prefer the topic in this
+   * message (after stripping intent phrases), else the previous user turn, else the raw input.
+   * @param {string} query - Current user message (already appended to conversationHistory)
+   * @returns {string}
+   */
+  function resolveExplicitFollowUpSearchQuery(query) {
+    const extracted = explicitFollowUpSearchQuery(query);
+    if (extracted.length >= 2) {
+      return extracted;
+    }
+    const users = conversationHistory.filter(
+      (m) => m && m.role === "user" && typeof m.content === "string"
+    );
+    if (users.length >= 2) {
+      const prev = users[users.length - 2].content.trim();
+      if (prev.length >= 2) {
+        return prev;
+      }
+    }
+    return (query || "").trim();
+  }
+
+  /**
    * Heuristic: queries that look like lookups (specific person, thing, etc.)
    * The classifier often returns ANSWER for these, but the model then says it doesn't know.
    */
@@ -880,9 +935,9 @@
    * If not, triggers a web search. This replaces pure heuristic detection.
    */
   async function queryNeedsWebSearchLLM(query, isFollowUp = false, signal = null) {
-    // Never search on follow-ups (the model already has context)
+    // Follow-ups skip automatic classification unless sendToLLM already forced search (explicit ask).
     if (isFollowUp) {
-      log('No search: follow-up message');
+      log('No search: follow-up message (no explicit web-search request)');
       return false;
     }
 
@@ -3039,13 +3094,13 @@ Provide a direct, informative answer with citations:`;
       if (isWebSearchEnabled() && supportsWebSearch) {
         const isFollowUp = conversationHistory.length > 1;
 
-        // Follow-up where user explicitly asks to search: use the first user message as search query
+        // Follow-up where user explicitly asks to search: run a real search for this turn (not classifier).
         if (isFollowUp && isExplicitSearchRequest(query)) {
-          const firstUserMsg = conversationHistory.find((m) => m.role === "user");
-          if (firstUserMsg && firstUserMsg.content && firstUserMsg.content.trim().length > 0) {
+          const resolved = resolveExplicitFollowUpSearchQuery(query);
+          if (resolved.length > 0) {
             needsSearch = true;
-            searchQuery = firstUserMsg.content.trim();
-            log('Explicit search request on follow-up, using first user message as query:', searchQuery);
+            searchQuery = resolved;
+            log('Explicit search request on follow-up, search query:', searchQuery);
           }
         }
 
