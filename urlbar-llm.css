@@ -362,8 +362,10 @@
   color: inherit;
 }
 
-/* Message content markdown – adapted from github-markdown-css (BrowseBot/vertex-mods) */
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) {
+/* Message content markdown – adapted from github-markdown-css (BrowseBot/vertex-mods)
+   Use :is(.llm-conversation-container .llm-message-assistant .llm-message-content, …) so
+   every assistant bubble matches with higher specificity (fixes styling only on first reply). */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) {
   --base-size-4: 0.2rem;
   --base-size-8: 0.35rem;
   --base-size-16: 0.5rem;
@@ -374,7 +376,7 @@
   --fgColor-accent: light-dark(var(--zen-primary-color), #88aaff);
 }
 @media (prefers-color-scheme: dark) {
-  :is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) {
+  :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) {
     --fgColor-default: #f0f6fc;
     --fgColor-muted: #9198a1;
     --fgColor-accent: #88aaff;
@@ -386,7 +388,7 @@
   }
 }
 @media (prefers-color-scheme: light) {
-  :is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) {
+  :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) {
     --fgColor-default: #1f2328;
     --fgColor-muted: #59636e;
     --fgColor-accent: var(--zen-primary-color, #0969da);
@@ -398,14 +400,14 @@
   }
 }
 
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) {
   margin: 0;
   color: var(--fgColor-default);
   font-size: 13px;
   line-height: 1.45;
   white-space: normal !important;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) a {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) a {
   color: var(--fgColor-accent) !important;
   text-decoration: none;
   cursor: pointer !important;
@@ -413,81 +415,81 @@
   position: relative !important;
   z-index: 1000 !important;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) a:hover {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) a:hover {
   text-decoration: underline;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) b,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) strong {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) b,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) strong {
   font-weight: var(--base-text-weight-semibold, 600);
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h1,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h2,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h3,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h1,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h2,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h3,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
   margin-top: var(--base-size-24);
   margin-bottom: var(--base-size-16);
   font-weight: var(--base-text-weight-semibold, 600);
   line-height: 1.25;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h1 {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h1 {
   font-size: 15px;
   margin-top: 0;
   padding-bottom: 0.2em;
   border-bottom: 1px solid var(--borderColor-muted);
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h2 {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h2 {
   font-size: 14px;
   padding-bottom: 0.2em;
   border-bottom: 1px solid var(--borderColor-muted);
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h3,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h3,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
   font-size: 13px;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
   color: var(--fgColor-muted);
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) p {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) p {
   margin-top: 0;
   margin-bottom: 6px;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) p:empty {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) p:empty {
   display: none;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:first-child {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:first-child {
   margin-top: 0 !important;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:last-child {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:last-child {
   margin-bottom: 0 !important;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) blockquote {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) blockquote {
   margin: 4px 0;
   padding: 0 0.8em;
   color: var(--fgColor-muted);
   border-left: 0.25em solid var(--borderColor-default);
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) ul,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) ol {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ol {
   margin-top: 0;
   margin-bottom: 6px;
   padding-left: 1.5em;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) ul:last-child,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) ol:last-child {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul:last-child,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ol:last-child {
   margin-bottom: 0;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) li {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li {
   margin: 0 0 2px 0;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) li:last-child {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li:last-child {
   margin-bottom: 0;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) code,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) tt {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) code,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) tt {
   font-family: var(--fontStack-monospace);
   font-size: 11px;
   padding: 0.15em 0.35em;
@@ -496,7 +498,7 @@
   background-color: var(--bgColor-neutral-muted);
   border-radius: 4px;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) pre {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) pre {
   margin: 2px 0;
   padding: 6px 8px;
   overflow-x: auto;
@@ -507,14 +509,14 @@
   border-radius: 4px;
   border: 1px solid var(--borderColor-muted);
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) pre code {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) pre code {
   padding: 0;
   font-size: inherit;
   background: transparent;
   border: 0;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table {
   border-spacing: 0;
   border-collapse: collapse;
   margin: 4px 0;
@@ -524,38 +526,38 @@
   overflow-x: auto;
   display: block;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table th,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table td,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table th,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table td {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table th,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table td,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table th,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table td {
   padding: 4px 8px;
   border: 1px solid var(--borderColor-default);
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table th,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table th {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table th,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table th {
   font-weight: 600;
   background-color: var(--bgColor-muted);
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) table tr:nth-child(2n),
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table tbody tr:nth-child(even) {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table tr:nth-child(2n),
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table tbody tr:nth-child(even) {
   background-color: var(--bgColor-muted);
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) hr,
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-hr {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) hr,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-hr {
   border: none;
   border-top: 1px solid var(--borderColor-muted);
   margin: 6px 0;
   height: 0;
   padding: 0;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper {
   position: relative;
   margin: 2px 0;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper pre {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper pre {
   margin: 0;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -578,10 +580,10 @@
   appearance: none;
   transition: opacity 0.15s ease, background-color 0.15s ease;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn.llm-copy-copied {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn.llm-copy-copied {
   background-image: none;
 }
-:is(.llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn:hover {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn:hover {
   opacity: 0.95;
 }
 
