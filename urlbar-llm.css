@@ -483,9 +483,23 @@
   margin-bottom: 0;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li {
-  margin: 0 0 2px 0;
+  margin: 0;
+  line-height: 1.35;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li:last-child {
+  margin-bottom: 0;
+}
+/* GFM wraps list lines in <p>; default p margins stack and look like huge gaps between items */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > p {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > p:not(:last-child) {
+  margin-bottom: 4px;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > ul,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > ol {
+  margin-top: 2px;
   margin-bottom: 0;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) code,
