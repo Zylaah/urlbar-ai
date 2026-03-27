@@ -494,7 +494,7 @@
     messageDiv.className = "llm-message llm-message-assistant";
 
     const contentDiv = document.createElement("div");
-    contentDiv.className = "llm-message-content markdown-body";
+    contentDiv.className = "llm-message-content";
 
     renderMarkdownToElement(message, contentDiv);
 
@@ -2922,7 +2922,7 @@ Provide a direct, informative answer with citations:`;
     
     // Create content div for streaming text
     const contentDiv = document.createElement("div");
-    contentDiv.className = "llm-message-content markdown-body";
+    contentDiv.className = "llm-message-content";
     contentDiv.textContent = "Thinking...";
     
     // Handle link clicks using mouseup event (more reliable than click in this context)
