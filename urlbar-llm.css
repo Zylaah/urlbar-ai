@@ -5,6 +5,8 @@
  * @import "js/urlbar-llm.css";
  */
 
+@import url("github-markdown-llm.css");
+
 /* Suppress native urlbar results when in LLM mode */
 .urlbarView[llm-mode-suppress-results="true"] .urlbarView-row:not(.llm-conversation-container) {
   display: none !important;
@@ -362,216 +364,69 @@
   color: inherit;
 }
 
-/* Message content markdown – adapted from github-markdown-css (BrowseBot/vertex-mods)
-   Use :is(.llm-conversation-container .llm-message-assistant .llm-message-content, …) so
-   every assistant bubble matches with higher specificity (fixes styling only on first reply). */
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) {
-  --base-size-4: 0.2rem;
-  --base-size-8: 0.35rem;
-  --base-size-16: 0.5rem;
-  --base-size-24: 0.65rem;
-  --base-size-40: 1.2rem;
-  --base-text-weight-semibold: 600;
-  --fontStack-monospace: "Cascadia Code", "Fira Code", "Monaco", "Consolas", Liberation Mono, monospace;
-  --fgColor-accent: light-dark(var(--zen-primary-color), #88aaff);
+/* github-markdown-llm.css: upstream github-markdown-css, scoped for this UI.
+   Refresh: curl -sL https://raw.githubusercontent.com/sindresorhus/github-markdown-css/main/github-markdown.css -o github-markdown.css
+   then: python scripts/scope-github-markdown.py */
+
+.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body,
+.urlbarView-row-llm .urlbarView-title.markdown-body {
+  white-space: normal !important;
+  background-color: transparent !important;
 }
+
 @media (prefers-color-scheme: dark) {
-  :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) {
-    --fgColor-default: #f0f6fc;
-    --fgColor-muted: #9198a1;
+  .llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body {
     --fgColor-accent: #88aaff;
-    --bgColor-default: #0d1117;
-    --bgColor-muted: #151b23;
-    --bgColor-neutral-muted: #656c7633;
-    --borderColor-default: #3d444d;
-    --borderColor-muted: #3d444db3;
   }
 }
 @media (prefers-color-scheme: light) {
-  :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) {
-    --fgColor-default: #1f2328;
-    --fgColor-muted: #59636e;
+  .llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body {
     --fgColor-accent: var(--zen-primary-color, #0969da);
-    --bgColor-default: #ffffff;
-    --bgColor-muted: #f6f8fa;
-    --bgColor-neutral-muted: #818b981f;
-    --borderColor-default: #d1d9e0;
-    --borderColor-muted: #d1d9e0b3;
   }
 }
 
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) {
-  margin: 0;
-  color: var(--fgColor-default);
-  font-size: 13px;
-  line-height: 1.45;
-  white-space: normal !important;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) a {
-  color: var(--fgColor-accent) !important;
-  text-decoration: none;
+/* Urlbar row: links must sit above the row for hit-testing */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) a {
   cursor: pointer !important;
   pointer-events: auto !important;
   position: relative !important;
   z-index: 1000 !important;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) a:hover {
-  text-decoration: underline;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) b,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) strong {
-  font-weight: var(--base-text-weight-semibold, 600);
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h1,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h2,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h3,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
-  margin-top: var(--base-size-24);
-  margin-bottom: var(--base-size-16);
-  font-weight: var(--base-text-weight-semibold, 600);
-  line-height: 1.25;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h1 {
-  font-size: 15px;
-  margin-top: 0;
-  padding-bottom: 0.2em;
-  border-bottom: 1px solid var(--borderColor-muted);
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h2 {
-  font-size: 14px;
-  padding-bottom: 0.2em;
-  border-bottom: 1px solid var(--borderColor-muted);
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h3,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
-  font-size: 13px;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
-  color: var(--fgColor-muted);
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) p {
-  margin-top: 0;
-  margin-bottom: 6px;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) p:empty {
+
+/* Streaming / GFM: hide empty paragraphs */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) p:empty {
   display: none;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:first-child {
+
+/* Slightly tighter lists than stock github-markdown for GFM <li><p>… */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) li > p {
   margin-top: 0 !important;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:last-child {
   margin-bottom: 0 !important;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) blockquote {
-  margin: 4px 0;
-  padding: 0 0.8em;
-  color: var(--fgColor-muted);
-  border-left: 0.25em solid var(--borderColor-default);
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) li > p:not(:last-child) {
+  margin-bottom: 4px !important;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ol {
-  margin-top: 0;
-  margin-bottom: 6px;
-  padding-left: 1.5em;
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) li + li {
+  margin-top: 0.12em !important;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul:last-child,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ol:last-child {
-  margin-bottom: 0;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li {
-  margin: 0;
-  line-height: 1.35;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li:last-child {
-  margin-bottom: 0;
-}
-/* GFM wraps list lines in <p>; default p margins stack and look like huge gaps between items */
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > p {
-  margin-top: 0;
-  margin-bottom: 0;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > p:not(:last-child) {
-  margin-bottom: 4px;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > ul,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > ol {
-  margin-top: 2px;
-  margin-bottom: 0;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) code,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) tt {
-  font-family: var(--fontStack-monospace);
-  font-size: 11px;
-  padding: 0.15em 0.35em;
-  margin: 0;
-  white-space: break-spaces;
-  background-color: var(--bgColor-neutral-muted);
-  border-radius: 4px;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) pre {
-  margin: 2px 0;
-  padding: 6px 8px;
-  overflow-x: auto;
-  font-size: 11px;
-  line-height: 1.35;
-  color: var(--fgColor-default);
-  background-color: var(--bgColor-muted);
-  border-radius: 4px;
-  border: 1px solid var(--borderColor-muted);
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) pre code {
-  padding: 0;
-  font-size: inherit;
-  background: transparent;
-  border: 0;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table {
-  border-spacing: 0;
-  border-collapse: collapse;
-  margin: 4px 0;
-  font-size: 12px;
-  width: auto;
+
+/* Wide tables in a narrow panel */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) table,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) .llm-markdown-table {
+  display: block;
   max-width: 100%;
   overflow-x: auto;
-  display: block;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table th,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table td,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table th,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table td {
-  padding: 4px 8px;
-  border: 1px solid var(--borderColor-default);
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table th,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table th {
-  font-weight: 600;
-  background-color: var(--bgColor-muted);
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table tr:nth-child(2n),
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table tbody tr:nth-child(even) {
-  background-color: var(--bgColor-muted);
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) hr,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-hr {
-  border: none;
-  border-top: 1px solid var(--borderColor-muted);
-  margin: 6px 0;
-  height: 0;
-  padding: 0;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper {
+
+/* Code block copy (DOM from urlbar-llm.uc.js) */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) .llm-code-block-wrapper {
   position: relative;
-  margin: 2px 0;
+  margin: 0.5em 0;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper pre {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) .llm-code-block-wrapper pre {
   margin: 0;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) .llm-code-copy-btn {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -594,10 +449,10 @@
   appearance: none;
   transition: opacity 0.15s ease, background-color 0.15s ease;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn.llm-copy-copied {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) .llm-code-copy-btn.llm-copy-copied {
   background-image: none;
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn:hover {
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content.markdown-body, .urlbarView-row-llm .urlbarView-title.markdown-body) .llm-code-copy-btn:hover {
   opacity: 0.95;
 }
 
