@@ -302,8 +302,8 @@
   display: flex;
   flex-direction: column;
   width: 100%;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
+  padding: 8px 10px;
   border-radius: 12px;
   background: light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.03));
   border: 1px solid light-dark(rgba(0, 0, 0, 0.08), rgba(255, 255, 255, 0.08));
@@ -334,6 +334,7 @@
 .llm-message-assistant {
   background: light-dark(rgba(0, 0, 0, 0.05), rgba(255, 255, 255, 0.05));
   color: light-dark(rgba(0, 0, 0, 0.9), rgba(255, 255, 255, 0.9));
+  padding: 6px 10px;
 }
 
 .llm-message-content {
@@ -362,15 +363,13 @@
   color: inherit;
 }
 
-/* Message content markdown – adapted from github-markdown-css (BrowseBot/vertex-mods)
-   Use :is(.llm-conversation-container .llm-message-assistant .llm-message-content, …) so
-   every assistant bubble matches with higher specificity (fixes styling only on first reply). */
+/* Assistant markdown: Raycast-like ultra-compact spacing (dense lists, tight blocks) */
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) {
-  --base-size-4: 0.2rem;
-  --base-size-8: 0.35rem;
-  --base-size-16: 0.5rem;
-  --base-size-24: 0.65rem;
-  --base-size-40: 1.2rem;
+  --base-size-4: 0.1rem;
+  --base-size-8: 0.2rem;
+  --base-size-16: 0.3rem;
+  --base-size-24: 0.35rem;
+  --base-size-40: 0.5rem;
   --base-text-weight-semibold: 600;
   --fontStack-monospace: "Cascadia Code", "Fira Code", "Monaco", "Consolas", Liberation Mono, monospace;
   --fgColor-accent: light-dark(var(--zen-primary-color), #88aaff);
@@ -404,7 +403,7 @@
   margin: 0;
   color: var(--fgColor-default);
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.32;
   white-space: normal !important;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) a {
@@ -428,34 +427,37 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
-  margin-top: var(--base-size-24);
-  margin-bottom: var(--base-size-16);
+  margin-top: 5px;
+  margin-bottom: 1px;
   font-weight: var(--base-text-weight-semibold, 600);
-  line-height: 1.25;
+  line-height: 1.22;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h1 {
-  font-size: 15px;
+  font-size: 14px;
   margin-top: 0;
-  padding-bottom: 0.2em;
+  margin-bottom: 2px;
+  padding-bottom: 3px;
   border-bottom: 1px solid var(--borderColor-muted);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h2 {
-  font-size: 14px;
-  padding-bottom: 0.2em;
+  font-size: 13px;
+  margin-top: 4px;
+  margin-bottom: 1px;
+  padding-bottom: 3px;
   border-bottom: 1px solid var(--borderColor-muted);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h3,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
-  font-size: 13px;
+  font-size: 12px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
   color: var(--fgColor-muted);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) p {
   margin-top: 0;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) p:empty {
   display: none;
@@ -466,58 +468,82 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:last-child {
   margin-bottom: 0 !important;
 }
+/* Tight vertical rhythm between block siblings (Raycast-like) */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + p,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + ul,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + ol,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + pre,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + .llm-code-block-wrapper,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + table,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + .llm-markdown-table {
+  margin-top: 2px;
+}
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) blockquote {
-  margin: 4px 0;
-  padding: 0 0.8em;
+  margin: 2px 0;
+  padding: 0 0 0 0.55em;
   color: var(--fgColor-muted);
-  border-left: 0.25em solid var(--borderColor-default);
+  border-left: 2px solid var(--borderColor-default);
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) blockquote > p {
+  margin-bottom: 1px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ol {
   margin-top: 0;
-  margin-bottom: 6px;
-  padding-left: 1.5em;
+  margin-bottom: 2px;
+  padding-left: 1.15em;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul:last-child,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ol:last-child {
   margin-bottom: 0;
 }
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul ul,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul ol,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ol ul,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ol ol {
+  margin-top: 0;
+  margin-bottom: 0;
+}
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li {
   margin: 0;
-  line-height: 1.35;
+  padding: 0;
+  line-height: 1.28;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li + li {
+  margin-top: 0;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li:last-child {
   margin-bottom: 0;
 }
-/* GFM wraps list lines in <p>; default p margins stack and look like huge gaps between items */
+/* GFM: <li><p>…</p></li> — kill extra vertical rhythm */
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > p {
   margin-top: 0;
   margin-bottom: 0;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > p:not(:last-child) {
-  margin-bottom: 4px;
+  margin-bottom: 2px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > ul,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > ol {
-  margin-top: 2px;
+  margin-top: 1px;
   margin-bottom: 0;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) code,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) tt {
   font-family: var(--fontStack-monospace);
   font-size: 11px;
-  padding: 0.15em 0.35em;
+  padding: 0.08em 0.28em;
   margin: 0;
   white-space: break-spaces;
   background-color: var(--bgColor-neutral-muted);
-  border-radius: 4px;
+  border-radius: 3px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) pre {
-  margin: 2px 0;
-  padding: 6px 8px;
+  margin: 3px 0;
+  padding: 4px 6px;
   overflow-x: auto;
   font-size: 11px;
-  line-height: 1.35;
+  line-height: 1.3;
   color: var(--fgColor-default);
   background-color: var(--bgColor-muted);
   border-radius: 4px;
@@ -533,8 +559,8 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table {
   border-spacing: 0;
   border-collapse: collapse;
-  margin: 4px 0;
-  font-size: 12px;
+  margin: 3px 0;
+  font-size: 11px;
   width: auto;
   max-width: 100%;
   overflow-x: auto;
@@ -544,7 +570,7 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table td,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table th,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table td {
-  padding: 4px 8px;
+  padding: 2px 5px;
   border: 1px solid var(--borderColor-default);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) table th,
@@ -560,21 +586,21 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-hr {
   border: none;
   border-top: 1px solid var(--borderColor-muted);
-  margin: 6px 0;
+  margin: 4px 0;
   height: 0;
   padding: 0;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper {
   position: relative;
-  margin: 2px 0;
+  margin: 3px 0;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper pre {
   margin: 0;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 4px;
+  right: 4px;
   z-index: 10;
   display: inline-flex;
   align-items: center;
