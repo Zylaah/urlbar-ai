@@ -587,7 +587,9 @@
       return out;
     });
 
-    // Render messages
+    // Render messages (citation pills: follow-up assistants often have no `sources` in JSON when
+    // there was no new web search — reuse the previous assistant's sources for favicon injection)
+    let lastAssistantSources = null;
     for (const msg of conversationHistory) {
       if (!msg || !msg.content) {
         continue;
@@ -595,7 +597,13 @@
       if (msg.role === "user") {
         renderUserMessageFromHistory(msg.content);
       } else if (msg.role === "assistant") {
-        renderAssistantMessageFromHistory(msg.content, msg.sources);
+        const stored =
+          msg.sources && Array.isArray(msg.sources) && msg.sources.length > 0 ? msg.sources : null;
+        const pillsSources = stored || lastAssistantSources;
+        renderAssistantMessageFromHistory(msg.content, pillsSources);
+        if (stored) {
+          lastAssistantSources = stored;
+        }
       }
     }
 
@@ -1534,9 +1542,98 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       chunks[i] = chunks[i]
         .replace(/\r\n/g, "\n")
         .replace(/^[ \t]+$/gm, "")
+        // GFM hard line breaks (two+ trailing spaces before \n) → extra <br> in output
+        .replace(/[ \t]{2,}\n/g, "\n")
         .replace(/\n{3,}/g, "\n\n");
     }
     return chunks.join("");
+  }
+
+  /**
+   * Strip noisy <br> between block-level tags (model/marked often emits these).
+   */
+  function compactAssistantMarkdownHtmlString(html) {
+    if (!html || typeof html !== "string") {
+      return html;
+    }
+    let h = html;
+    const br = String.raw`<br\s*/?>`;
+    const ws = String.raw`\s*`;
+    h = h.replace(new RegExp(`</(ul|ol|h[1-6]|p|blockquote|table|pre)>${ws}(?:${br}${ws})+`, "gi"), "</$1>");
+    h = h.replace(new RegExp(`(?:${br}${ws})+<(ul|ol|h[1-6]|p|blockquote|table|pre)\\b`, "gi"), "<$1");
+    h = h.replace(new RegExp(`</li>${ws}(?:${br}${ws})+`, "gi"), "</li>");
+    h = h.replace(new RegExp(`(?:${br}${ws})+<li\\b`, "gi"), "<li");
+    h = h.replace(new RegExp(`(?:${br}${ws})+<hr\\b`, "gi"), "<hr");
+    h = h.replace(/<hr([^>]*)\/?>(?:\s*<br\s*\/?>\s*)+/gi, "<hr$1/>");
+    h = h.replace(/(?:<br\s*\/?>\s*){3,}/gi, "<br /><br />");
+    let prev;
+    do {
+      prev = h;
+      const m = h.match(/^\s*<span([^>]*)>([\s\S]*)<\/span>\s*$/i);
+      if (
+        m &&
+        !/\bllm-citation-marker\b/i.test(m[1]) &&
+        /<(h[1-6]|ul|ol|hr|blockquote|pre|table)\b/i.test(m[2])
+      ) {
+        h = m[2].trim();
+      }
+    } while (h !== prev);
+    return h;
+  }
+
+  /**
+   * Unwrap phrasing-only <span>s that incorrectly wrap block markup (breaks our `> * + *` CSS),
+   * then drop leftover <br> between block siblings.
+   */
+  function normalizeAssistantContentDom(root) {
+    if (!root) {
+      return;
+    }
+    const blockTag = /^(UL|OL|LI|H[1-6]|HR|P|BLOCKQUOTE|PRE|TABLE|DIV)$/i;
+    const isCodeWrapper = (el) =>
+      el && el.classList && el.classList.contains("llm-code-block-wrapper");
+
+    let again = true;
+    while (again) {
+      again = false;
+      const spans = [...root.querySelectorAll("span")].filter(
+        (s) =>
+          !s.classList.contains("llm-citation-marker") &&
+          !s.classList.contains("llm-citation-fallback")
+      );
+      for (const span of spans) {
+        if (!span.querySelector("h1,h2,h3,h4,h5,h6,ul,ol,hr,blockquote,pre,table")) {
+          continue;
+        }
+        const parent = span.parentNode;
+        if (!parent) {
+          continue;
+        }
+        while (span.firstChild) {
+          parent.insertBefore(span.firstChild, span);
+        }
+        parent.removeChild(span);
+        again = true;
+        break;
+      }
+    }
+
+    [...root.querySelectorAll("br")].forEach((br) => {
+      const prev = br.previousElementSibling;
+      const next = br.nextElementSibling;
+      const prevB = prev && (blockTag.test(prev.tagName) || isCodeWrapper(prev));
+      const nextB = next && (blockTag.test(next.tagName) || isCodeWrapper(next));
+      if (prevB && (nextB || !next)) {
+        br.remove();
+        return;
+      }
+      if (!prev && nextB) {
+        br.remove();
+      }
+      if (prev && prev.tagName === "LI" && next && next.tagName === "LI") {
+        br.remove();
+      }
+    });
   }
 
   // Render markdown as DOM elements (uses marked + DOMPurify when available, fallback to custom parser)
@@ -1559,12 +1656,14 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
           .replace(/<table>/g, '<table class="llm-markdown-table">')
           .replace(/<hr>/g, '<hr class="llm-markdown-hr">')
           .replace(/<a href=/g, '<a target="_blank" rel="noopener" href=');
-        const sanitized = DOMPurifyLib.sanitize(withClasses.trim(), {
+        const compacted = compactAssistantMarkdownHtmlString(withClasses.trim());
+        const sanitized = DOMPurifyLib.sanitize(compacted, {
           ALLOWED_URI_REGEXP: /^https?:\/\//i,
           ADD_ATTR: ["target", "rel", "data-source"]
         });
         element.innerHTML = sanitized.trim();
         attachCopyButtonsToCodeBlocks(element);
+        normalizeAssistantContentDom(element);
       } catch (e) {
         logWarn("marked/DOMPurify render failed, using fallback:", e.message);
         renderMarkdownFallback(text, element);
@@ -1681,6 +1780,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       }
     }
     attachCopyButtonsToCodeBlocks(element);
+    normalizeAssistantContentDom(element);
   }
   
   // Parse markdown table and return a DOM table element
