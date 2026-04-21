@@ -734,7 +734,7 @@
   padding-inline: 10px 12px;
   margin-inline: 6px !important;
   font-size: var(--urlbarView-small-font-size, 0.85em);
-  min-width: auto;
+  min-width: 3em !important;
   background-color: var(--button-background-color);
   border: none;
   cursor: pointer;
