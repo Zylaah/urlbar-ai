@@ -588,7 +588,7 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-hr {
   border: none;
   border-top: 1px solid var(--borderColor-muted);
-  margin: 4px 0;
+  margin: 10px 0;
   height: 0;
   padding: 0;
 }
