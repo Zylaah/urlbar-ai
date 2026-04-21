@@ -747,6 +747,10 @@
     deleteButton.type = "button";
     deleteButton.className = "urlbarView-button llm-history-delete-button";
     deleteButton.textContent = "Delete";
+    // Keep focus on the urlbar: a focused button would blur #urlbar-input and close the panel.
+    deleteButton.addEventListener("mousedown", (e) => {
+      e.preventDefault();
+    });
 
     rowButtons.appendChild(deleteButton);
     row.appendChild(rowInner);
@@ -789,7 +793,11 @@
         }
       }
 
-      urlbarInput.focus();
+      requestAnimationFrame(() => {
+        urlbar.setAttribute("open", "true");
+        urlbar.setAttribute("breakout-extend", "true");
+        urlbarInput.focus({ preventScroll: true });
+      });
     });
 
     row.addEventListener("click", (e) => {
