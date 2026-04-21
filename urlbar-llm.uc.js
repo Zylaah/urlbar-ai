@@ -106,14 +106,16 @@
   }
 
   /**
-   * After opening a link or citation in a background tab, refocus the urlbar only if
-   * LLM mode is still active. Skips when the user already left LLM (e.g. clicked outside
-   * during the link refocus delay (`FOCUS_RESTORE_DELAY`).
+   * Refocus `#urlbar-input` and restore native blur handling when LLM mode is still active.
+   * Used after links/citations and code-block copy — skips if
+   * the user already left LLM (e.g. clicked outside during `FOCUS_RESTORE_DELAY`).
+   * Clears `isSelectingInContainer` so outside-click dismissal works as expected.
    * @param {object} [options]
    * @param {boolean} [options.extendBreakout] – set urlbar `breakout-extend` (streaming row)
    */
   function refocusUrlbarAfterLinkIfStillInLlmMode(options = {}) {
     const extendBreakout = options.extendBreakout === true;
+    isSelectingInContainer = false;
     if (!isLLMMode) {
       isClickingLink = false;
       restoreNativeBlur();
@@ -1316,31 +1318,6 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
           lastHistoryProviderKey = urlbar.getAttribute("llm-provider") || null;
           sendToLLM(urlbar, urlbarInput, query);
         }
-      } else if (isLLMMode && e.altKey && e.key === "ArrowUp") {
-        e.preventDefault();
-        e.stopPropagation();
-
-        if (isShowingHistoryList()) {
-          log("Alt+ArrowUp dismissed history list");
-          dismissHistoryList(urlbar, urlbarInput);
-          return;
-        }
-
-        const providerKey = urlbar.getAttribute("llm-provider");
-        if (!providerKey) {
-          log("Alt+ArrowUp pressed but no providerKey on urlbar");
-          return;
-        }
-
-        // Load stored sessions for this provider
-        getProviderSessions(providerKey).then((sessions) => {
-          if (!sessions.length) {
-            log("Alt+ArrowUp pressed but no stored sessions for provider:", providerKey);
-            return;
-          }
-          log("Alt+ArrowUp showing history list for provider:", providerKey, "with", sessions.length, "sessions");
-          showHistoryListForProvider(providerKey, urlbar, urlbarInput);
-        });
       } else if (e.key === "Escape" && isLLMMode) {
         e.preventDefault();
         e.stopPropagation();
@@ -1356,6 +1333,38 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
         }
       }
     }, true);
+
+    // Alt+ArrowUp: window capture so history toggles while focus is on the conversation
+    // (or copy buttons), not only on #urlbar-input — same as native shortcuts eating keydown.
+    window.addEventListener(
+      "keydown",
+      (e) => {
+        if (!isLLMMode || !e.altKey || e.key !== "ArrowUp") {
+          return;
+        }
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        if (isShowingHistoryList()) {
+          log("Alt+ArrowUp dismissed history list");
+          dismissHistoryList(urlbar, urlbarInput);
+          return;
+        }
+        const providerKey = urlbar.getAttribute("llm-provider");
+        if (!providerKey) {
+          log("Alt+ArrowUp: no providerKey on urlbar");
+          return;
+        }
+        getProviderSessions(providerKey).then((sessions) => {
+          if (!sessions.length) {
+            log("Alt+ArrowUp: no stored sessions for provider:", providerKey);
+            return;
+          }
+          log("Alt+ArrowUp showing history list for provider:", providerKey, "with", sessions.length, "sessions");
+          showHistoryListForProvider(providerKey, urlbar, urlbarInput);
+        });
+      },
+      true
+    );
 
     // Clean up on blur (when urlbar loses focus)
     urlbarInput.addEventListener("blur", (e) => {
@@ -1557,6 +1566,9 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
       btn.className = 'llm-code-copy-btn';
       btn.type = 'button';
       btn.setAttribute('aria-label', 'Copy code');
+      btn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+      });
       wrapper.insertBefore(btn, pre);
       btn.addEventListener('click', () => {
         const text = code.textContent || '';
@@ -1569,8 +1581,12 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
             btn.setAttribute('aria-label', prevLabel);
           }, 1500);
         };
+        const afterCopy = () => {
+          showCopied();
+          setTimeout(() => refocusUrlbarAfterLinkIfStillInLlmMode(), LIMITS.FOCUS_RESTORE_DELAY);
+        };
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(showCopied).catch(() => {});
+          navigator.clipboard.writeText(text).then(afterCopy).catch(() => {});
         } else {
           try {
             const ta = document.createElement('textarea');
@@ -1581,11 +1597,10 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
             ta.select();
             document.execCommand('copy');
             document.body.removeChild(ta);
-            showCopied();
+            afterCopy();
           } catch (err) {}
         }
       });
-      wrapper.insertBefore(btn, pre);
     });
   }
 
