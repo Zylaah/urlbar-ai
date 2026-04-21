@@ -718,11 +718,16 @@
   border: none;
   cursor: pointer;
   color: inherit;
+  /* Allow custom text color; native button chrome ignores `color` otherwise */
+  -moz-appearance: none;
+  appearance: none;
+  color-scheme: light dark;
 }
 
 .urlbarView-row[data-llm-history-row] > .urlbarView-row-buttons > .urlbarView-button.llm-history-delete-button:hover {
-  color: var(--urlbarView-result-button-hover-color);
+  /* Beat chrome://browser urlbarView-button:hover; light = white, dark = black */
   background-color: var(--urlbarView-result-button-hover-background-color);
+  color: light-dark(#ffffff, #000000) !important;
 }
 
 .urlbarView-row[data-llm-history-row][selected]
