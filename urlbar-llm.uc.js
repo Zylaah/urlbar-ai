@@ -1051,12 +1051,6 @@
    * If not, triggers a web search. This replaces pure heuristic detection.
    */
   async function queryNeedsWebSearchLLM(query, isFollowUp = false, signal = null) {
-    // Follow-ups skip automatic classification unless sendToLLM already forced search (explicit ask).
-    if (isFollowUp) {
-      log('No search: follow-up message (no explicit web-search request)');
-      return false;
-    }
-
     // Heuristic override: "Qui est X", "Who is X", etc. often get ANSWER but the model then says it doesn't know
     if (looksLikeLookupQuery(query)) {
       log('Lookup-style query, forcing web search:', query);
@@ -1065,6 +1059,10 @@
 
     // Ask the LLM to classify the query
     log('Asking model to classify query for web search need:', query);
+
+    const followUpHint = isFollowUp
+      ? `\n\nThis may be a follow-up in an ongoing chat (short wording is normal). If it needs current events, recent data, verification, or anything time-sensitive or niche, reply SEARCH. Do not assume earlier messages already gave enough web context for this turn.`
+      : "";
 
     const classificationPrompt = [
       {
@@ -1075,7 +1073,7 @@ Reply with ONLY one word:
 - "SEARCH" if: the question is about a specific person (named individual), niche/obscure topic, current events, recent news, things you might not have detailed info about, or when in doubt
 - "ANSWER" ONLY if you are very confident you have accurate, detailed information (e.g. well-known historical figures, common knowledge facts)
 
-When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
+When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${followUpHint}`
       },
       {
         role: "user",
@@ -1519,12 +1517,35 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
     urlbar.setAttribute("llm-hint", provider.name);
   }
 
+  /**
+   * Tighten model output before Markdown parse: trim trailing spaces per line and collapse
+   * excessive blank lines (outside fenced ``` blocks) so GFM does not emit huge `<p>` gaps
+   * or extra thematic breaks from inconsistent spacing.
+   */
+  function normalizeAssistantMarkdownText(text) {
+    if (text == null || typeof text !== "string") {
+      return text;
+    }
+    const chunks = text.split(/(```[\s\S]*?```)/g);
+    for (let i = 0; i < chunks.length; i++) {
+      if (i % 2 === 1) {
+        continue;
+      }
+      chunks[i] = chunks[i]
+        .replace(/\r\n/g, "\n")
+        .replace(/^[ \t]+$/gm, "")
+        .replace(/\n{3,}/g, "\n\n");
+    }
+    return chunks.join("");
+  }
+
   // Render markdown as DOM elements (uses marked + DOMPurify when available, fallback to custom parser)
   function renderMarkdownToElement(text, element) {
     if (!text) {
       element.textContent = "";
       return;
     }
+    text = normalizeAssistantMarkdownText(text);
     element.textContent = "";
 
     if (markedLib && DOMPurifyLib) {
@@ -2526,6 +2547,23 @@ Provide a direct, informative answer with citations:`;
   }
 
   /**
+   * Sources for citation pills: this turn's `currentSearchSources`, or the last assistant
+   * message in history that still has `sources` (follow-up with no new web search).
+   */
+  function getEffectiveCitationSources() {
+    if (currentSearchSources && currentSearchSources.length > 0) {
+      return currentSearchSources.map((s) => ({ ...s }));
+    }
+    for (let i = conversationHistory.length - 1; i >= 0; i--) {
+      const m = conversationHistory[i];
+      if (m.role === "assistant" && m.sources && m.sources.length > 0) {
+        return m.sources.map((s) => ({ ...s }));
+      }
+    }
+    return [];
+  }
+
+  /**
    * Inject favicons into citation markers [1], [2], etc. and set data-url for click-to-open.
    * No separate source section – markers in the text show the site favicon only.
    */
@@ -2550,6 +2588,7 @@ Provide a direct, informative answer with citations:`;
       return '';
     };
     messageElement.querySelectorAll('.llm-citation-marker').forEach((marker) => {
+      marker.querySelectorAll(".llm-citation-favicon, .llm-citation-fallback").forEach((el) => el.remove());
       const idx = parseInt(marker.dataset.source, 10);
       const source = sources[idx - 1];
       const url = getSourceUrl(source);
@@ -3288,21 +3327,36 @@ Provide a direct, informative answer with citations:`;
         }));
       }
       conversationHistory.push(assistantEntry);
+
+      // Snapshot for pills: this turn's stored sources, or prior assistant sources (no new search).
+      // Do not read `currentSearchSources` inside delayed inject — the next user send clears it.
+      const sourcesForCitationPills =
+        assistantEntry.sources && assistantEntry.sources.length > 0
+          ? assistantEntry.sources.map((s) => ({ ...s }))
+          : getEffectiveCitationSources();
       
       log("Conversation now has", conversationHistory.length, "messages");
       
-      // Inject favicons only after streaming is complete and final DOM is rendered (deferred so no debounce can overwrite).
-      // Capture row and sources now – they get overwritten when the user sends another message, so the closure must use the captured values.
-      if (currentSearchSources && currentSearchSources.length > 0) {
-        const rowToInject = streamingResultRow;
-        const sourcesToInject = [...currentSearchSources];
-        setTimeout(() => {
-          if (rowToInject && rowToInject.isConnected) {
-            rowToInject.dataset.citationSources = JSON.stringify(sourcesToInject);
-            injectFaviconsIntoCitationMarkers(rowToInject, sourcesToInject);
-          }
-        }, LIMITS.RENDER_DEBOUNCE + 20);
-      }
+      // Citation favicons: run after layout + debounce tail so the final renderMarkdownToElement
+      // pass does not wipe injected <img> nodes.
+      const rowToInject = streamingResultRow;
+      const runCitationInject = () => {
+        if (!rowToInject || !rowToInject.isConnected) {
+          return;
+        }
+        if (!rowToInject.querySelector(".llm-citation-marker")) {
+          return;
+        }
+        if (!sourcesForCitationPills.length) {
+          return;
+        }
+        rowToInject.dataset.citationSources = JSON.stringify(sourcesForCitationPills);
+        injectFaviconsIntoCitationMarkers(rowToInject, sourcesForCitationPills);
+      };
+      requestAnimationFrame(() => {
+        requestAnimationFrame(runCitationInject);
+      });
+      setTimeout(runCitationInject, LIMITS.RENDER_DEBOUNCE + 80);
 
       // Persist conversation after each assistant response (and on deactivate)
       maybeSaveConversationToHistory(urlbar);
