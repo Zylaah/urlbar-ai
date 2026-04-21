@@ -732,6 +732,7 @@
   border-radius: var(--urlbarView-result-button-size, 24px);
   padding-block: 0;
   padding-inline: 10px 12px;
+  margin-inline: 6px !important;
   font-size: var(--urlbarView-small-font-size, 0.85em);
   min-width: auto;
   background-color: var(--button-background-color);
