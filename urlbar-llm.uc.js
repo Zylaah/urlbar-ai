@@ -104,6 +104,37 @@
       window.gURLBar.inputField.addEventListener("blur", window.gURLBar);
     }
   }
+
+  /**
+   * After opening a link or citation in a background tab, refocus the urlbar only if
+   * LLM mode is still active. Skips when the user already left LLM (e.g. clicked outside
+   * during the link refocus delay (`FOCUS_RESTORE_DELAY`).
+   * @param {object} [options]
+   * @param {boolean} [options.extendBreakout] – set urlbar `breakout-extend` (streaming row)
+   */
+  function refocusUrlbarAfterLinkIfStillInLlmMode(options = {}) {
+    const extendBreakout = options.extendBreakout === true;
+    if (!isLLMMode) {
+      isClickingLink = false;
+      restoreNativeBlur();
+      return;
+    }
+    const urlbarInput = document.getElementById("urlbar-input");
+    const urlbar = document.getElementById("urlbar");
+    if (urlbarInput && urlbar) {
+      urlbar.setAttribute("open", "true");
+      if (extendBreakout) {
+        urlbar.setAttribute("breakout-extend", "true");
+      }
+      urlbarInput.focus();
+    }
+    isClickingLink = false;
+    restoreNativeBlur();
+    if (extendBreakout) {
+      log("Refocused urlbar");
+    }
+  }
+
   let conversationHistory = []; // Store conversation messages for follow-ups
   let conversationContainer = null; // Container for all messages
   let currentAssistantMessage = ""; // Track current streaming response
@@ -117,10 +148,10 @@
   /** Per-message safety cap (no truncation below this); allows full conversation restore */
   const HISTORY_MAX_CONTENT_LENGTH = 500000;
 
-  /** Synthetic history-picker rows appended as direct children of .urlbarView-results */
+  /** Synthetic history-picker rows under `.urlbarView-results` (see {@link getUrlbarResultsElement}) */
   const ATTR_LLM_HISTORY_ROW = "data-llm-history-row";
 
-  // Runtime navigation state for history browsing (Alt+ArrowUp)
+  // Runtime navigation state for history browsing (Alt+ArrowUp opens / dismisses list)
   let historyIndex = -1; // -1 = live conversation, >= 0 = index in stored sessions
   let lastHistoryProviderKey = null;
 
@@ -573,7 +604,19 @@
     urlbarInput.focus();
   }
 
+  /**
+   * Prefer `.urlbarView-results` under the active `.urlbarView` (same as the conversation
+   * container). Using `#urlbar-results` first breaks on Zen/Fx when rows are reparented under
+   * an inner `.urlbarView-results`, so strict direct-child checks failed to find history rows.
+   */
   function getUrlbarResultsElement() {
+    const urlbarView = document.querySelector(".urlbarView");
+    if (urlbarView) {
+      const inner = urlbarView.querySelector(".urlbarView-results");
+      if (inner) {
+        return inner;
+      }
+    }
     return document.querySelector("#urlbar-results") || document.querySelector(".urlbarView-results");
   }
 
@@ -582,7 +625,9 @@
     if (!results) {
       return;
     }
-    results.querySelectorAll(`:scope > .urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`).forEach((el) => el.remove());
+    results
+      .querySelectorAll(`.urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`)
+      .forEach((el) => el.remove());
   }
 
   function isShowingHistoryList() {
@@ -590,7 +635,7 @@
     if (!results) {
       return false;
     }
-    return !!results.querySelector(`:scope > .urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`);
+    return !!results.querySelector(`.urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`);
   }
 
   function dismissHistoryList(urlbar, urlbarInput) {
@@ -727,7 +772,7 @@
       row.remove();
       sessions.splice(idx, 1);
 
-      const remainingItems = resultsEl.querySelectorAll(`:scope > .urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`);
+      const remainingItems = resultsEl.querySelectorAll(`.urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`);
       remainingItems.forEach((el, newIndex) => {
         el.setAttribute("data-session-index", String(newIndex));
       });
@@ -1263,15 +1308,15 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
           lastHistoryProviderKey = urlbar.getAttribute("llm-provider") || null;
           sendToLLM(urlbar, urlbarInput, query);
         }
-      } else if (isLLMMode && e.altKey && e.key === "ArrowDown") {
-        e.preventDefault();
-        e.stopPropagation();
-        if (isShowingHistoryList()) {
-          dismissHistoryList(urlbar, urlbarInput);
-        }
       } else if (isLLMMode && e.altKey && e.key === "ArrowUp") {
         e.preventDefault();
         e.stopPropagation();
+
+        if (isShowingHistoryList()) {
+          log("Alt+ArrowUp dismissed history list");
+          dismissHistoryList(urlbar, urlbarInput);
+          return;
+        }
 
         const providerKey = urlbar.getAttribute("llm-provider");
         if (!providerKey) {
@@ -1419,7 +1464,11 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
     // fully reset (exit history + LLM mode). Blur and mutation observers can miss edge cases.
     document.addEventListener("mousedown", function outsideClickHandler(e) {
       if (!isLLMMode && !isShowingHistoryList()) return;
-      if (isClickingLink || isSelectingInContainer) return;
+      // Do not skip when isSelectingInContainer: after focusing the conversation
+      // for copy/selection that flag stays true until input focus, which blocks
+      // cleanup when the user clicks the page to dismiss the urlbar.
+      // Do not skip when isClickingLink: link opens in a background tab and this flag
+      // stays true for FOCUS_RESTORE_DELAY; an outside click should still dismiss LLM.
 
       const target = e.target;
       const urlbarView = document.querySelector(".urlbarView");
@@ -1505,10 +1554,11 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
         const text = code.textContent || '';
         const showCopied = () => {
           btn.classList.add('llm-copy-copied');
-          btn.textContent = 'Copied!';
+          const prevLabel = btn.getAttribute('aria-label') || 'Copy code';
+          btn.setAttribute('aria-label', 'Copied');
           setTimeout(() => {
             btn.classList.remove('llm-copy-copied');
-            btn.textContent = '';
+            btn.setAttribute('aria-label', prevLabel);
           }, 1500);
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -2897,16 +2947,7 @@ Provide a direct, informative answer with citations:`;
             }
             citationMarker.classList.add('llm-citation-marker-highlight');
             setTimeout(() => citationMarker.classList.remove('llm-citation-marker-highlight'), LIMITS.ANIMATION_GLOW_DURATION);
-            setTimeout(() => {
-              const urlbarInput = document.getElementById("urlbar-input");
-              const urlbar = document.getElementById("urlbar");
-              if (urlbarInput && urlbar) {
-                urlbar.setAttribute("open", "true");
-                urlbarInput.focus();
-              }
-              isClickingLink = false;
-              restoreNativeBlur();
-            }, LIMITS.FOCUS_RESTORE_DELAY);
+            setTimeout(() => refocusUrlbarAfterLinkIfStillInLlmMode(), LIMITS.FOCUS_RESTORE_DELAY);
           } catch (err) {
             logError('Failed to open citation source:', err);
             isClickingLink = false;
@@ -2931,16 +2972,7 @@ Provide a direct, informative answer with citations:`;
           } else if (topWindow.open) {
             topWindow.open(linkElement.href, '_blank');
           }
-          setTimeout(() => {
-            const urlbarInput = document.getElementById("urlbar-input");
-            const urlbar = document.getElementById("urlbar");
-            if (urlbarInput && urlbar) {
-              urlbar.setAttribute("open", "true");
-              urlbarInput.focus();
-            }
-            isClickingLink = false;
-            restoreNativeBlur();
-          }, LIMITS.FOCUS_RESTORE_DELAY);
+          setTimeout(() => refocusUrlbarAfterLinkIfStillInLlmMode(), LIMITS.FOCUS_RESTORE_DELAY);
         } catch (err) {
           logError('Failed to open link:', err);
           isClickingLink = false;
@@ -3023,16 +3055,7 @@ Provide a direct, informative answer with citations:`;
             }
             citationMarker.classList.add('llm-citation-marker-highlight');
             setTimeout(() => citationMarker.classList.remove('llm-citation-marker-highlight'), LIMITS.ANIMATION_GLOW_DURATION);
-            setTimeout(() => {
-              const urlbarInput = document.getElementById("urlbar-input");
-              const urlbar = document.getElementById("urlbar");
-              if (urlbarInput && urlbar) {
-                urlbar.setAttribute("open", "true");
-                urlbarInput.focus();
-              }
-              isClickingLink = false;
-              restoreNativeBlur();
-            }, LIMITS.FOCUS_RESTORE_DELAY);
+            setTimeout(() => refocusUrlbarAfterLinkIfStillInLlmMode(), LIMITS.FOCUS_RESTORE_DELAY);
           } catch (err) {
             logError('Failed to open citation source:', err);
             isClickingLink = false;
@@ -3071,18 +3094,10 @@ Provide a direct, informative answer with citations:`;
             }
             
             // Keep urlbar open and focused
-            setTimeout(() => {
-              const urlbarInput = document.getElementById("urlbar-input");
-              const urlbar = document.getElementById("urlbar");
-              if (urlbarInput && urlbar) {
-                urlbar.setAttribute("open", "true");
-                urlbar.setAttribute("breakout-extend", "true");
-                urlbarInput.focus();
-              }
-              isClickingLink = false;
-              restoreNativeBlur();
-              log('Refocused urlbar');
-            }, LIMITS.FOCUS_RESTORE_DELAY);
+            setTimeout(
+              () => refocusUrlbarAfterLinkIfStillInLlmMode({ extendBreakout: true }),
+              LIMITS.FOCUS_RESTORE_DELAY
+            );
           } catch (err) {
             logError('Failed to open link:', err);
             isClickingLink = false;
