@@ -117,6 +117,9 @@
   /** Per-message safety cap (no truncation below this); allows full conversation restore */
   const HISTORY_MAX_CONTENT_LENGTH = 500000;
 
+  /** Synthetic history-picker rows appended as direct children of .urlbarView-results */
+  const ATTR_LLM_HISTORY_ROW = "data-llm-history-row";
+
   // Runtime navigation state for history browsing (Alt+ArrowUp)
   let historyIndex = -1; // -1 = live conversation, >= 0 = index in stored sessions
   let lastHistoryProviderKey = null;
@@ -523,6 +526,8 @@
       streamingResultRow = null;
     }
 
+    removeLlmHistoryRowsFromResults();
+
     // Reset conversation container
     if (conversationContainer && conversationContainer.parentNode) {
       conversationContainer.remove();
@@ -568,18 +573,31 @@
     urlbarInput.focus();
   }
 
+  function getUrlbarResultsElement() {
+    return document.querySelector("#urlbar-results") || document.querySelector(".urlbarView-results");
+  }
+
+  function removeLlmHistoryRowsFromResults() {
+    const results = getUrlbarResultsElement();
+    if (!results) {
+      return;
+    }
+    results.querySelectorAll(`:scope > .urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`).forEach((el) => el.remove());
+  }
+
   function isShowingHistoryList() {
-    return !!(conversationContainer && conversationContainer.querySelector(".llm-history-list"));
+    const results = getUrlbarResultsElement();
+    if (!results) {
+      return false;
+    }
+    return !!results.querySelector(`:scope > .urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`);
   }
 
   function dismissHistoryList(urlbar, urlbarInput) {
     if (!isShowingHistoryList()) {
       return;
     }
-    if (conversationContainer && conversationContainer.parentNode) {
-      conversationContainer.remove();
-    }
-    conversationContainer = null;
+    removeLlmHistoryRowsFromResults();
     conversationHistory = [];
     currentSessionId = null; /* Next question starts a new session */
     urlbarInput.setAttribute("placeholder", "Ask anything...");
@@ -591,6 +609,160 @@
     log("Dismissed history list, back to LLM mode");
   }
 
+  /**
+   * Builds a native urlbar result row (same surface as Firefox / Zen omnibox) for one history session.
+   */
+  function createNativeHistoryUrlbarRow(session, index, sessions, resultsEl, providerKey, urlbar, urlbarInput) {
+    const row = document.createElement("div");
+    row.className = "urlbarView-row";
+    row.setAttribute("role", "presentation");
+    row.setAttribute("type", "history");
+    row.setAttribute("row-selectable", "");
+    row.setAttribute(ATTR_LLM_HISTORY_ROW, "true");
+    row.setAttribute("data-session-index", String(index));
+
+    const rawTitle = session.title || "(untitled conversation)";
+    const titleText = rawTitle.length > 50 ? rawTitle.slice(0, 50) + "…" : rawTitle;
+
+    let urlText = "";
+    if (session.updatedAt || session.createdAt) {
+      const ts = session.updatedAt || session.createdAt;
+      try {
+        urlText = new Date(ts).toLocaleString();
+      } catch (e) {
+        urlText = "";
+      }
+    }
+    if (urlText) {
+      row.setAttribute("has-url", "");
+    }
+
+    const rowInner = document.createElement("span");
+    rowInner.className = "urlbarView-row-inner";
+    rowInner.setAttribute("role", "option");
+    rowInner.setAttribute("selectable", "");
+
+    const noWrap = document.createElement("span");
+    noWrap.className = "urlbarView-no-wrap";
+
+    const faviconImg = document.createElement("img");
+    faviconImg.className = "urlbarView-favicon";
+    faviconImg.src = "chrome://browser/skin/zen-icons/history.svg";
+    faviconImg.alt = "";
+    faviconImg.setAttribute("aria-hidden", "true");
+
+    const typeIcon = document.createElement("span");
+    typeIcon.className = "urlbarView-type-icon";
+
+    const tailPrefix = document.createElement("span");
+    tailPrefix.className = "urlbarView-tail-prefix";
+    tailPrefix.setAttribute("aria-hidden", "true");
+    const tailStr = document.createElement("span");
+    tailStr.className = "urlbarView-tail-prefix-string";
+    const tailChar = document.createElement("span");
+    tailChar.className = "urlbarView-tail-prefix-char";
+    tailPrefix.appendChild(tailStr);
+    tailPrefix.appendChild(tailChar);
+
+    const titleEl = document.createElement("span");
+    titleEl.className = "urlbarView-title urlbarView-overflowable";
+    titleEl.setAttribute("dir", "auto");
+    titleEl.textContent = titleText;
+
+    const tags = document.createElement("span");
+    tags.className = "urlbarView-tags urlbarView-overflowable";
+
+    const sep = document.createElement("span");
+    sep.className = "urlbarView-title-separator";
+
+    const action = document.createElement("span");
+    action.className = "urlbarView-action";
+
+    noWrap.appendChild(faviconImg);
+    noWrap.appendChild(typeIcon);
+    noWrap.appendChild(tailPrefix);
+    noWrap.appendChild(titleEl);
+    noWrap.appendChild(tags);
+    noWrap.appendChild(sep);
+    noWrap.appendChild(action);
+
+    rowInner.appendChild(noWrap);
+
+    if (urlText) {
+      const urlEl = document.createElement("span");
+      urlEl.className = "urlbarView-url";
+      urlEl.textContent = urlText;
+      rowInner.appendChild(urlEl);
+    }
+
+    const rowButtons = document.createElement("div");
+    rowButtons.className = "urlbarView-row-buttons";
+
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "urlbarView-button llm-history-delete-button";
+    deleteButton.textContent = "Delete";
+
+    rowButtons.appendChild(deleteButton);
+    row.appendChild(rowInner);
+    row.appendChild(rowButtons);
+
+    deleteButton.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const idxAttr = row.getAttribute("data-session-index");
+      const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
+      if (!Number.isFinite(idx) || idx < 0 || idx >= sessions.length) {
+        return;
+      }
+
+      const targetId = sessions[idx].id;
+      try {
+        await deleteSessionById(targetId);
+      } catch (err) {
+        logWarn("Failed to delete session:", err);
+        return;
+      }
+
+      row.remove();
+      sessions.splice(idx, 1);
+
+      const remainingItems = resultsEl.querySelectorAll(`:scope > .urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`);
+      remainingItems.forEach((el, newIndex) => {
+        el.setAttribute("data-session-index", String(newIndex));
+      });
+
+      log("Deleted history session from provider:", providerKey, "session id:", targetId);
+
+      if (!sessions.length) {
+        removeLlmHistoryRowsFromResults();
+        conversationHistory = [];
+        urlbarInput.setAttribute("placeholder", "Ask anything...");
+        const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+        if (urlbarViewBodyInner) {
+          urlbarViewBodyInner.style.display = "none";
+        }
+      }
+
+      urlbarInput.focus();
+    });
+
+    row.addEventListener("click", (e) => {
+      if (e.target.closest("button")) {
+        return;
+      }
+      const idxAttr = row.getAttribute("data-session-index");
+      const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
+      if (Number.isFinite(idx) && idx >= 0 && idx < sessions.length) {
+        historyIndex = idx;
+        lastHistoryProviderKey = providerKey;
+        loadSessionIntoCurrentConversation(sessions[idx], urlbar, urlbarInput);
+      }
+    });
+
+    return row;
+  }
+
   async function showHistoryListForProvider(providerKey, urlbar, urlbarInput) {
     const sessions = await getProviderSessions(providerKey);
     if (!sessions.length) {
@@ -598,141 +770,30 @@
       return;
     }
 
-    // Ensure we have a container
-    if (conversationContainer && conversationContainer.parentNode) {
-      conversationContainer.remove();
-    }
-    conversationContainer = createConversationContainer();
-    if (!conversationContainer) {
+    const resultsEl = getUrlbarResultsElement();
+    if (!resultsEl) {
+      logError("showHistoryListForProvider: no .urlbarView-results");
       return;
     }
 
-    // History list root
-    const listRoot = document.createElement("div");
-    listRoot.className = "llm-history-list";
+    removeLlmHistoryRowsFromResults();
+
+    if (conversationContainer && conversationContainer.parentNode) {
+      conversationContainer.remove();
+      conversationContainer = null;
+    }
 
     sessions.forEach((session, index) => {
-      const item = document.createElement("div");
-      item.className = "llm-history-list-item";
-      item.setAttribute("data-session-index", String(index));
-
-      /* Zen urlbar row structure: row > row-inner > no-wrap > [favicon, content] */
-      const rowInner = document.createElement("div");
-      rowInner.className = "llm-history-list-row-inner";
-
-      const noWrap = document.createElement("div");
-      noWrap.className = "llm-history-list-no-wrap";
-
-      const faviconBox = document.createElement("span");
-      faviconBox.className = "llm-history-favicon";
-      const faviconImg = document.createElement("img");
-      faviconImg.src = "chrome://browser/skin/zen-icons/history.svg";
-      faviconImg.alt = "";
-      faviconImg.setAttribute("aria-hidden", "true");
-      faviconBox.appendChild(faviconImg);
-      noWrap.appendChild(faviconBox);
-
-      const metaRow = document.createElement("div");
-      metaRow.className = "llm-history-list-meta";
-
-      const title = document.createElement("span");
-      title.className = "llm-history-list-title";
-      const rawTitle = session.title || "(untitled conversation)";
-      title.textContent = rawTitle.length > 50 ? rawTitle.slice(0, 50) + "…" : rawTitle;
-      metaRow.appendChild(title);
-
-      if (session.updatedAt || session.createdAt) {
-        const subtitle = document.createElement("span");
-        subtitle.className = "llm-history-list-subtitle";
-        const ts = session.updatedAt || session.createdAt;
-        try {
-          subtitle.textContent = new Date(ts).toLocaleString();
-        } catch (e) {
-          subtitle.textContent = "";
-        }
-        metaRow.appendChild(subtitle);
-      }
-
-      noWrap.appendChild(metaRow);
-      rowInner.appendChild(noWrap);
-
-      const actions = document.createElement("div");
-      actions.className = "llm-history-list-actions";
-
-      const deleteButton = document.createElement("button");
-      deleteButton.className = "llm-history-button llm-history-delete-button";
-      deleteButton.textContent = "Delete";
-
-      actions.appendChild(deleteButton);
-      rowInner.appendChild(actions);
-      item.appendChild(rowInner);
-
-      deleteButton.addEventListener("click", async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const idxAttr = item.getAttribute("data-session-index");
-        const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
-        if (!Number.isFinite(idx) || idx < 0 || idx >= sessions.length) {
-          return;
-        }
-
-        const targetId = sessions[idx].id;
-        try {
-          await deleteSessionById(targetId);
-        } catch (err) {
-          logWarn("Failed to delete session:", err);
-          return;
-        }
-
-        // Remove from current in-memory list UI
-        item.remove();
-        sessions.splice(idx, 1);
-
-        // Reindex remaining items' data-session-index attributes
-        const remainingItems = listRoot.querySelectorAll(".llm-history-list-item");
-        remainingItems.forEach((el, newIndex) => {
-          el.setAttribute("data-session-index", String(newIndex));
-        });
-
-        log("Deleted history session from provider:", providerKey, "session id:", targetId);
-
-        // If no sessions left, return to clean LLM mode (no history list)
-        if (!sessions.length) {
-          if (conversationContainer && conversationContainer.parentNode) {
-            conversationContainer.remove();
-          }
-          conversationContainer = null;
-          conversationHistory = [];
-          urlbarInput.setAttribute("placeholder", "Ask anything...");
-          // Hide results area like on first activation with no conversation
-          const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
-          if (urlbarViewBodyInner) {
-            urlbarViewBodyInner.style.display = "none";
-          }
-        }
-
-        // Refocus input so blur/dismiss works correctly (focus was on Delete button)
-        urlbarInput.focus();
-      });
-
-      /* Click on row (not Delete) opens conversation – matches Zen suggestion behavior */
-      item.addEventListener("click", (e) => {
-        if (e.target.closest(".llm-history-delete-button")) return;
-        const idxAttr = item.getAttribute("data-session-index");
-        const idx = idxAttr ? parseInt(idxAttr, 10) : NaN;
-        if (Number.isFinite(idx) && idx >= 0 && idx < sessions.length) {
-          historyIndex = idx;
-          lastHistoryProviderKey = providerKey;
-          loadSessionIntoCurrentConversation(sessions[idx], urlbar, urlbarInput);
-        }
-      });
-
-      listRoot.appendChild(item);
+      resultsEl.appendChild(
+        createNativeHistoryUrlbarRow(session, index, sessions, resultsEl, providerKey, urlbar, urlbarInput)
+      );
     });
 
-    conversationContainer.appendChild(listRoot);
+    const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+    if (urlbarViewBodyInner) {
+      urlbarViewBodyInner.style.display = "";
+    }
 
-    // Ensure LLM mode visuals and focus
     urlbar.setAttribute("llm-mode-active", "true");
     urlbar.setAttribute("llm-provider", providerKey);
     urlbarInput.setAttribute("placeholder", "Select a conversation or ask a new question...");
@@ -1178,7 +1239,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
           // If history list is visible, we're starting a new conversation (not opening one); clear list and session id
           const wasShowingHistoryList = isShowingHistoryList();
           if (wasShowingHistoryList) {
-            conversationContainer.innerHTML = "";
+            removeLlmHistoryRowsFromResults();
             currentSessionId = null;
           }
 
@@ -1279,11 +1340,16 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
           (relatedTarget.closest && relatedTarget.closest('a'))
         );
         
-        const clickedInsideLLM = llmContainer && (
-          llmContainer.contains(activeElement) || 
-          llmContainer.contains(relatedTarget) ||
-          isLinkClick
-        );
+        const onHistoryRow =
+          (activeElement && activeElement.closest && activeElement.closest(`.urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`)) ||
+          (relatedTarget && relatedTarget.closest && relatedTarget.closest(`.urlbarView-row[${ATTR_LLM_HISTORY_ROW}]`));
+
+        const clickedInsideLLM =
+          (llmContainer &&
+            (llmContainer.contains(activeElement) ||
+              llmContainer.contains(relatedTarget))) ||
+          isLinkClick ||
+          !!onHistoryRow;
         
         if (document.activeElement !== urlbarInput && isLLMMode && !clickedInsideLLM) {
           log("Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", relatedTarget?.tagName);
@@ -1307,8 +1373,10 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
               log("View hide ignored - clicking link or selecting text");
               return;
             }
-            const llmContainer = document.querySelector(".llm-conversation-container");
-            if (urlbarView.hidden && isLLMMode && !llmContainer?.matches(':hover')) {
+            const overLlmContent =
+              document.querySelector(".llm-conversation-container:hover") ||
+              document.querySelector(`.urlbarView-row[${ATTR_LLM_HISTORY_ROW}]:hover`);
+            if (urlbarView.hidden && isLLMMode && !overLlmContent) {
               log("View hidden, deactivating");
               deactivateLLMMode(urlbar, urlbarInput, true);
             }
@@ -1331,8 +1399,10 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.`
               log("Urlbar close ignored - clicking link or selecting text");
               return;
             }
-            const llmContainer = document.querySelector(".llm-conversation-container");
-            if (!llmContainer?.matches(':hover')) {
+            const overLlmContent =
+              document.querySelector(".llm-conversation-container:hover") ||
+              document.querySelector(`.urlbarView-row[${ATTR_LLM_HISTORY_ROW}]:hover`);
+            if (!overLlmContent) {
               log("Urlbar closed, deactivating");
               deactivateLLMMode(urlbar, urlbarInput, true);
             }
@@ -2590,7 +2660,9 @@ Provide a direct, informative answer with citations:`;
       conversationContainer.remove();
       conversationContainer = null;
     }
-    
+
+    removeLlmHistoryRowsFromResults();
+
     // Remove streaming result first
     if (streamingResultRow) {
       streamingResultRow.remove();
