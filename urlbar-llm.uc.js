@@ -677,7 +677,6 @@
     row.setAttribute("data-session-index", String(index));
 
     const rawTitle = session.title || "(untitled conversation)";
-    const titleText = rawTitle.length > 50 ? rawTitle.slice(0, 50) + "…" : rawTitle;
 
     let urlText = "";
     if (session.updatedAt || session.createdAt) {
@@ -722,7 +721,8 @@
     const titleEl = document.createElement("span");
     titleEl.className = "urlbarView-title urlbarView-overflowable";
     titleEl.setAttribute("dir", "auto");
-    titleEl.textContent = titleText;
+    titleEl.setAttribute("title", rawTitle);
+    titleEl.textContent = rawTitle;
 
     const tags = document.createElement("span");
     tags.className = "urlbarView-tags urlbarView-overflowable";

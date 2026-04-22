@@ -721,6 +721,12 @@
    Conversation history: Alt+ArrowUp opens or dismisses the list — native-style rows under .urlbarView-results
    ============================================ */
 
+/* Let the full session title participate in .urlbarView-overflowable ellipsis when space is tight */
+.urlbarView-row[data-llm-history-row] .urlbarView-no-wrap,
+.urlbarView-row[data-llm-history-row] .urlbarView-title {
+  min-width: 0;
+}
+
 /*
  * Labeled delete: Firefox only auto-styles non-empty .urlbarView-button under
  * certain .urlbarView-results > .urlbarView-row chains; keep a small override.
