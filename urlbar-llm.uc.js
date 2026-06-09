@@ -43,7 +43,15 @@
     RETRY_MAX_ATTEMPTS: 3,            // Max retries for API calls
     RETRY_BASE_DELAY_MS: 1000,        // Base delay for exponential backoff (ms)
     RETRY_MAX_DELAY_MS: 10000,        // Cap on backoff delay (ms)
+    /** Rolling context compression (ChatGPT-style long thread) */
+    CONTEXT_CHAR_BUDGET: 28000,       // Compress when transcript exceeds ~7k tokens
+    CONTEXT_RECENT_MESSAGES: 6,       // Keep last N messages verbatim (3 exchanges)
+    CONTEXT_SUMMARY_INPUT_MAX: 3500,  // Max chars per message fed to summarizer
+    CONTEXT_SUMMARY_MAX_TOKENS: 900,  // Max tokens for summary output
   };
+
+  const CONTEXT_SUMMARY_HEADER =
+    "Summary of earlier conversation (for context — do not repeat this verbatim to the user unless asked):";
 
   // Ollama Web Search/Fetch API endpoints
   const OLLAMA_WEB_SEARCH_URL = "https://ollama.com/api/web_search";
@@ -163,6 +171,10 @@
 
   // When loading a conversation from history, we keep its session id so on deactivate we update that session instead of creating a new one
   let currentSessionId = null;
+
+  /** Cached rolling summary: messages [0..conversationContextSummaryEndIndex) are represented in this text */
+  let conversationContextSummary = null;
+  let conversationContextSummaryEndIndex = 0;
 
   // Get preferences - Direct access to preference service using Components
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
@@ -549,6 +561,205 @@
     return [languageSystemMessage, ...apiHistory.map(toApiMessage)];
   }
 
+  function resetConversationContextSummary() {
+    conversationContextSummary = null;
+    conversationContextSummaryEndIndex = 0;
+  }
+
+  function isContextCompressionEnabled() {
+    return getPref("extension.urlbar-llm.context-compression-enabled", true);
+  }
+
+  function getContextCharBudget() {
+    const pref = getPref("extension.urlbar-llm.context-char-budget", LIMITS.CONTEXT_CHAR_BUDGET);
+    return Number.isFinite(pref) && pref > 4000 ? pref : LIMITS.CONTEXT_CHAR_BUDGET;
+  }
+
+  function getContextRecentMessages() {
+    const pref = getPref("extension.urlbar-llm.context-recent-messages", LIMITS.CONTEXT_RECENT_MESSAGES);
+    return Number.isFinite(pref) && pref >= 2 ? Math.floor(pref) : LIMITS.CONTEXT_RECENT_MESSAGES;
+  }
+
+  function estimateHistoryChars(messages) {
+    if (!messages || !messages.length) {
+      return 0;
+    }
+    return messages.reduce((sum, m) => sum + (typeof m.content === "string" ? m.content.length : 0), 0);
+  }
+
+  function clipTextForSummary(text, maxLen) {
+    if (!text || text.length <= maxLen) {
+      return text || "";
+    }
+    return text.slice(0, maxLen) + "…";
+  }
+
+  function formatTranscriptForSummary(messages) {
+    return messages
+      .map((m) => {
+        const role = m.role === "assistant" ? "Assistant" : "User";
+        const body = clipTextForSummary(m.content || "", LIMITS.CONTEXT_SUMMARY_INPUT_MAX);
+        return `${role}: ${body}`;
+      })
+      .join("\n\n");
+  }
+
+  /**
+   * Non-streaming chat completion (classification, summarization, etc.).
+   * @param {Array<{role: string, content: string}>} messages
+   * @param {AbortSignal|null} signal
+   * @param {{ maxTokens?: number, temperature?: number }} [options]
+   * @returns {Promise<string>}
+   */
+  async function completeChatNonStreaming(messages, signal = null, options = {}) {
+    const maxTokens = options.maxTokens ?? 512;
+    const temperature = options.temperature ?? 0.2;
+
+    if (currentProvider.name === "Ollama") {
+      const response = await fetchWithRetry(currentProvider.baseUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: currentProvider.model,
+          messages,
+          stream: false,
+          options: { temperature, num_predict: maxTokens }
+        })
+      }, signal);
+      const json = await response.json();
+      return (json.message?.content || "").trim();
+    }
+
+    const base = currentProvider.baseUrl.replace(/\/+$/, "");
+    let url = base.endsWith("/chat/completions") ? base : base + "/chat/completions";
+    const isGemini = currentProvider.name === "Gemini";
+    if (isGemini && currentProvider.apiKey) {
+      url += (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(currentProvider.apiKey);
+    }
+    const headers = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${currentProvider.apiKey}`
+    };
+    const response = await fetchWithRetry(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model: currentProvider.model,
+        messages,
+        stream: false,
+        max_tokens: maxTokens,
+        temperature
+      })
+    }, signal);
+    const json = await response.json();
+    return (json.choices?.[0]?.message?.content || "").trim();
+  }
+
+  /**
+   * Summarize older turns for rolling context compression.
+   * @param {Array<{role: string, content: string}>} messages
+   * @param {AbortSignal|null} signal
+   * @returns {Promise<string>}
+   */
+  async function summarizeConversationMessages(messages, signal = null) {
+    const transcript = formatTranscriptForSummary(messages);
+    if (!transcript.trim()) {
+      return "";
+    }
+
+    const summaryPrompt = [
+      {
+        role: "system",
+        content:
+          "You compress chat history so a language model can continue the conversation within a limited context window. " +
+          "Produce a faithful summary preserving: user goals, constraints, decisions, proper names, technical terms, language/locale, and open questions. " +
+          "Omit greetings, filler, and duplicated explanations. Use the same language as most of the transcript. " +
+          "Use concise prose or bullet points. Do not invent facts not present in the transcript."
+      },
+      {
+        role: "user",
+        content: `Summarize this conversation:\n\n${transcript}`
+      }
+    ];
+
+    return completeChatNonStreaming(summaryPrompt, signal, {
+      maxTokens: LIMITS.CONTEXT_SUMMARY_MAX_TOKENS,
+      temperature: 0.2
+    });
+  }
+
+  /**
+   * If history exceeds budget, replace older turns with a cached rolling summary + recent verbatim window.
+   * Full transcript remains in conversationHistory / UI; only the API payload is compressed.
+   * @param {Array<{role: string, content: string}>} apiHistory
+   * @param {AbortSignal|null} signal
+   * @param {HTMLElement|null} statusElement
+   * @returns {Promise<Array<{role: string, content: string}>>}
+   */
+  async function prepareHistoryForApi(apiHistory, signal = null, statusElement = null) {
+    if (!isContextCompressionEnabled() || !apiHistory || apiHistory.length === 0) {
+      return apiHistory;
+    }
+
+    const recentKeep = getContextRecentMessages();
+    const budget = getContextCharBudget();
+    const totalChars = estimateHistoryChars(apiHistory);
+
+    if (apiHistory.length <= recentKeep || totalChars <= budget) {
+      return apiHistory;
+    }
+
+    const recentStart = apiHistory.length - recentKeep;
+    const recentPart = apiHistory.slice(recentStart);
+    const oldPart = apiHistory.slice(0, recentStart);
+    if (!oldPart.length) {
+      return apiHistory;
+    }
+
+    let summary = conversationContextSummary;
+    if (!summary || conversationContextSummaryEndIndex !== recentStart) {
+      log(
+        "Context compression: summarizing",
+        oldPart.length,
+        "messages (",
+        estimateHistoryChars(oldPart),
+        "chars); keeping",
+        recentPart.length,
+        "recent"
+      );
+      if (statusElement) {
+        statusElement.innerHTML =
+          '<span class="llm-status-line"><span class="llm-search-spinner"></span> Condensing conversation...</span>';
+      }
+      try {
+        summary = await summarizeConversationMessages(oldPart, signal);
+        if (!summary) {
+          throw new Error("Empty summary");
+        }
+        conversationContextSummary = summary;
+        conversationContextSummaryEndIndex = recentStart;
+        log("Context compression: summary cached for", recentStart, "messages (", summary.length, "chars)");
+      } catch (err) {
+        if (err.name === "AbortError") {
+          throw err;
+        }
+        logWarn("Context compression failed, using truncated fallback:", err.message);
+        summary = formatTranscriptForSummary(
+          oldPart.map((m) => ({
+            role: m.role,
+            content: clipTextForSummary(m.content || "", 800)
+          }))
+        );
+        conversationContextSummary = summary;
+        conversationContextSummaryEndIndex = recentStart;
+      }
+    } else {
+      log("Context compression: reusing cached summary for", recentStart, "messages");
+    }
+
+    return [{ role: "system", content: `${CONTEXT_SUMMARY_HEADER}\n\n${summary}` }, ...recentPart];
+  }
+
   function buildSessionFromConversation(urlbar) {
     if (!conversationHistory || conversationHistory.length === 0) {
       log("Skipped building history session: empty conversationHistory");
@@ -662,6 +873,8 @@
       return;
     }
 
+    resetConversationContextSummary();
+
     // Abort any in-flight request and clear streaming row
     if (abortController) {
       try {
@@ -769,6 +982,7 @@
     }
     removeLlmHistoryRowsFromResults();
     conversationHistory = [];
+    resetConversationContextSummary();
     const providerKey = urlbar.getAttribute("llm-provider");
     if (providerKey) {
       delete liveConversationsByProvider[providerKey];
@@ -915,6 +1129,7 @@
       if (!sessions.length) {
         removeLlmHistoryRowsFromResults();
         conversationHistory = [];
+        resetConversationContextSummary();
         urlbarInput.setAttribute("placeholder", "Ask anything...");
         const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
         if (urlbarViewBodyInner) {
@@ -1434,6 +1649,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
             removeLlmHistoryRowsFromResults();
             currentSessionId = null;
             conversationHistory = [];
+            resetConversationContextSummary();
           }
 
           // Add user message to conversation
@@ -3161,6 +3377,7 @@ Provide a direct, informative answer with citations:`;
     
     // Clear conversation history
     conversationHistory = [];
+    resetConversationContextSummary();
     
     // Remove conversation container
     if (conversationContainer) {
@@ -3698,12 +3915,24 @@ Provide a direct, informative answer with citations:`;
 
       // Clear spinner and show thinking text
       titleElement.textContent = "Thinking...";
-      
-      const messagesToSend = buildApiMessagesFromHistory(apiHistory, searchContext);
+
+      const historyForPayload = await prepareHistoryForApi(
+        apiHistory,
+        abortController.signal,
+        titleElement
+      );
+      const messagesToSend = buildApiMessagesFromHistory(historyForPayload, searchContext);
       if (searchContext) {
-        log('Added web search context to messages');
+        log("Added web search context to messages");
       }
-      log("API payload:", messagesToSend.length, "messages");
+      log(
+        "API payload:",
+        messagesToSend.length,
+        "messages (history was",
+        apiHistory.length,
+        historyForPayload.length !== apiHistory.length ? ", compressed" : "",
+        ")"
+      );
       
       await streamResponse(messagesToSend, titleElement, abortController.signal);
       
