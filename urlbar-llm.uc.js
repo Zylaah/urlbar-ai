@@ -2022,16 +2022,17 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       }
     }
 
-    // Remove <br> that sit next to block-level/code-block siblings, leading/trailing <br>,
-    // and collapse consecutive <br> runs. Skips whitespace-only text nodes; preserves
-    // genuine intra-paragraph line breaks (text on both sides).
+    // Drop redundant <br> between block siblings (not every br touching a block).
+    // Skips whitespace-only text nodes; preserves intra-paragraph line breaks.
     const isBlockEl = (el) =>
       el && el.nodeType === 1 && (blockTag.test(el.tagName) || isCodeWrapper(el));
     const meaningfulSibling = (node, dir) => {
       let n = dir === "prev" ? node.previousSibling : node.nextSibling;
       while (n) {
         if (n.nodeType === 3) {
-          if (n.textContent.trim()) return n; // non-empty text counts as content
+          if (n.textContent.trim()) {
+            return n;
+          }
           n = dir === "prev" ? n.previousSibling : n.nextSibling;
           continue;
         }
@@ -2045,7 +2046,25 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       }
       const prev = meaningfulSibling(br, "prev");
       const next = meaningfulSibling(br, "next");
-      if (!prev || !next || isBlockEl(prev) || isBlockEl(next)) {
+      const prevBlock = prev && prev.nodeType === 1 && isBlockEl(prev);
+      const nextBlock = next && next.nodeType === 1 && isBlockEl(next);
+
+      if (prevBlock && (nextBlock || !next)) {
+        br.remove();
+        return;
+      }
+      if (!prev && nextBlock) {
+        br.remove();
+        return;
+      }
+      if (
+        prev &&
+        prev.nodeType === 1 &&
+        prev.tagName === "LI" &&
+        next &&
+        next.nodeType === 1 &&
+        next.tagName === "LI"
+      ) {
         br.remove();
       }
     });

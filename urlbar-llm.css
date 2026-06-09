@@ -429,22 +429,22 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h4,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h5,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h6 {
-  margin-top: 5px;
-  margin-bottom: 1px;
+  margin-top: 8px;
+  margin-bottom: 3px;
   font-weight: var(--base-text-weight-semibold, 600);
   line-height: 1.22;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h1 {
   font-size: 14px;
   margin-top: 0;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
   padding-bottom: 3px;
   border-bottom: 1px solid var(--borderColor-muted);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) h2 {
   font-size: 13px;
-  margin-top: 4px;
-  margin-bottom: 1px;
+  margin-top: 8px;
+  margin-bottom: 3px;
   padding-bottom: 3px;
   border-bottom: 1px solid var(--borderColor-muted);
 }
@@ -459,7 +459,7 @@
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) p {
   margin-top: 0;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) p:empty {
   display: none;
@@ -470,9 +470,9 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > *:last-child {
   margin-bottom: 0 !important;
 }
-/* Tight vertical rhythm between block siblings (Raycast-like) */
+/* Vertical rhythm between block siblings (compact but readable) */
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + .llm-markdown-gap {
-  margin-top: 4px;
+  margin-top: 6px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + p:not(.llm-markdown-gap),
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + ul,
@@ -480,11 +480,18 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + pre,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + .llm-code-block-wrapper,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + table,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + .llm-markdown-table {
-  margin-top: 2px;
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + .llm-markdown-table,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + h1,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + h2,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + h3,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + h4,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + h5,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + h6,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + blockquote {
+  margin-top: 6px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) blockquote {
-  margin: 2px 0;
+  margin: 4px 0;
   padding: 0 0 0 0.55em;
   color: var(--fgColor-muted);
   border-left: 2px solid var(--borderColor-default);
@@ -495,7 +502,7 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ol {
   margin-top: 0;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
   padding-left: 1.15em;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) ul:last-child,
@@ -515,7 +522,7 @@
   line-height: 1.28;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li + li {
-  margin-top: 0;
+  margin-top: 2px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li:last-child {
   margin-bottom: 0;
@@ -526,7 +533,7 @@
   margin-bottom: 0;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > p:not(:last-child) {
-  margin-bottom: 2px;
+  margin-bottom: 3px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > ul,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) li > ol {
@@ -588,7 +595,7 @@
 }
 /* Thematic break from markdown (---) → <p class="llm-markdown-gap"><br /></p> */
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-gap {
-  margin: 4px 0;
+  margin: 6px 0;
   padding: 0;
   line-height: 1.32;
 }
