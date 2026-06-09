@@ -471,7 +471,10 @@
   margin-bottom: 0 !important;
 }
 /* Tight vertical rhythm between block siblings (Raycast-like) */
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + p,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + .llm-markdown-gap {
+  margin-top: 4px;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + p:not(.llm-markdown-gap),
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + ul,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + ol,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + pre,
@@ -583,13 +586,14 @@
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-table tbody tr:nth-child(even) {
   background-color: var(--bgColor-muted);
 }
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) hr,
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-hr {
-  border: none;
-  border-top: 1px solid var(--borderColor-muted);
-  margin: 10px 0;
-  height: 0;
+/* Thematic break from markdown (---) → <p class="llm-markdown-gap"><br /></p> */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-gap {
+  margin: 4px 0;
   padding: 0;
+  line-height: 1.32;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-gap:empty {
+  margin: 0;
 }
 /* ============================================
    Modern code block card (header + highlight.js body)

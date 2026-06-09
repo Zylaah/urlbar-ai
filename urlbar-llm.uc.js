@@ -1588,12 +1588,19 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     return chunks.join("");
   }
 
-  /** Replace thematic breaks (<hr>) with a single line break. */
+  /**
+   * Replace thematic breaks (<hr>) with a line break that survives post-processing.
+   * A lone <br> between blocks is stripped by compactAssistantMarkdownHtmlString and
+   * normalizeAssistantContentDom; wrap it in a minimal paragraph with a marked <br>.
+   */
   function replaceHorizontalRulesWithBreaks(html) {
     if (!html || typeof html !== "string") {
       return html;
     }
-    return html.replace(/<hr\b[^>]*\/?>/gi, "<br />");
+    return html.replace(
+      /<hr\b[^>]*\/?>/gi,
+      '<p class="llm-markdown-gap"><br class="llm-hr-break" /></p>'
+    );
   }
 
   /**
@@ -1683,6 +1690,9 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       return null;
     };
     [...root.querySelectorAll("br")].forEach((br) => {
+      if (br.classList.contains("llm-hr-break")) {
+        return;
+      }
       const prev = meaningfulSibling(br, "prev");
       const next = meaningfulSibling(br, "next");
       if (!prev || !next || isBlockEl(prev) || isBlockEl(next)) {
@@ -1715,7 +1725,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
         );
         const sanitized = DOMPurifyLib.sanitize(compacted, {
           ALLOWED_URI_REGEXP: /^https?:\/\//i,
-          ADD_ATTR: ["target", "rel", "data-source"]
+          ADD_ATTR: ["target", "rel", "data-source", "class"]
         });
         element.innerHTML = sanitized.trim();
         attachCopyButtonsToCodeBlocks(element);
@@ -2057,8 +2067,11 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     // Match [1], [2], [3] etc. but not [text](url) links which were already converted
     html = html.replace(/\[(\d+)\](?!\()/g, '<span class="llm-citation-marker" data-source="$1"></span>');
     
-    // Horizontal rule (---, ***, ___) → single line break
-    html = html.replace(/^(?:---+|\*\*\*+|___+)\s*$/gm, "<br />");
+    // Horizontal rule (---, ***, ___) → preserved line break (see replaceHorizontalRulesWithBreaks)
+    html = html.replace(
+      /^(?:---+|\*\*\*+|___+)\s*$/gm,
+      '<p class="llm-markdown-gap"><br class="llm-hr-break" /></p>'
+    );
     
     // Line breaks
     html = html.replace(/\n/g, '<br/>');
