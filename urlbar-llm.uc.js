@@ -17,8 +17,10 @@
   "use strict";
 
   // Timing and size limits (centralized constants)
-  /** System instruction so the LLM responds in the same language as the user's message */
-  const LANGUAGE_SYSTEM_INSTRUCTION = "Always respond in the same language the user used for their message. If the user writes in French, respond in French; if in Spanish, in Spanish; and so on.";
+  /** System instruction: language + multi-turn context (follow-ups, pronouns, prior topics) */
+  const LANGUAGE_SYSTEM_INSTRUCTION =
+    "Always respond in the same language the user used for their message. If the user writes in French, respond in French; if in Spanish, in Spanish; and so on. " +
+    "This is a multi-turn conversation: read all prior user and assistant messages. Interpret short follow-ups (e.g. \"du coup\", \"and for that\", \"non mais…\") in light of earlier turns. Do not answer each message in isolation or repeat earlier answers unless asked.";
 
   const LIMITS = {
     CACHE_TTL: 30 * 60 * 1000,       // 30 minutes
@@ -138,6 +140,8 @@
   }
 
   let conversationHistory = []; // Store conversation messages for follow-ups
+  /** In-memory sessions per provider, survives deactivate so re-activating restores context */
+  const liveConversationsByProvider = {};
   let conversationContainer = null; // Container for all messages
   let currentAssistantMessage = ""; // Track current streaming response
   let currentSearchSources = []; // Track sources used for current response
@@ -434,6 +438,117 @@
     return content;
   }
 
+  function cloneHistoryEntry(message) {
+    if (!message) {
+      return message;
+    }
+    const out = { role: message.role, content: message.content };
+    if (message.role === "assistant" && message.sources && message.sources.length > 0) {
+      out.sources = message.sources.map((s) => ({
+        title: s.title,
+        url: s.url,
+        source: s.source,
+        index: s.index
+      }));
+    }
+    return out;
+  }
+
+  function snapshotConversationHistory() {
+    return conversationHistory.map(cloneHistoryEntry);
+  }
+
+  /**
+   * When a stream is aborted mid-response, keep partial text so the next turn has assistant context.
+   */
+  function flushPartialAssistantToHistory() {
+    const text = (currentAssistantMessage || "").trim();
+    if (!text) {
+      return;
+    }
+    const last = conversationHistory[conversationHistory.length - 1];
+    if (last && last.role === "assistant") {
+      if ((last.content || "").trim() === text) {
+        return;
+      }
+      last.content = currentAssistantMessage;
+      log("Updated partial assistant response in conversation history");
+      return;
+    }
+    if (last && last.role === "user") {
+      conversationHistory.push({ role: "assistant", content: currentAssistantMessage });
+      log("Flushed partial assistant response to conversation history");
+    }
+  }
+
+  function stashLiveConversation(providerKey) {
+    if (!providerKey || !conversationHistory.length) {
+      return;
+    }
+    liveConversationsByProvider[providerKey] = snapshotConversationHistory();
+    log("Stashed live conversation for provider:", providerKey, "messages:", conversationHistory.length);
+  }
+
+  function restoreLiveConversation(providerKey) {
+    const stored = liveConversationsByProvider[providerKey];
+    if (!stored || !stored.length) {
+      return false;
+    }
+    conversationHistory = stored.map(cloneHistoryEntry);
+    renderConversationFromHistory();
+    log("Restored live conversation for provider:", providerKey, "messages:", conversationHistory.length);
+    return true;
+  }
+
+  function renderConversationFromHistory() {
+    if (!conversationHistory.length) {
+      return;
+    }
+    if (conversationContainer && conversationContainer.parentNode) {
+      conversationContainer.remove();
+    }
+    conversationContainer = createConversationContainer();
+    if (!conversationContainer) {
+      return;
+    }
+    let lastAssistantSources = null;
+    for (const msg of conversationHistory) {
+      if (!msg || !msg.content) {
+        continue;
+      }
+      if (msg.role === "user") {
+        renderUserMessageFromHistory(msg.content);
+      } else if (msg.role === "assistant") {
+        const stored =
+          msg.sources && Array.isArray(msg.sources) && msg.sources.length > 0 ? msg.sources : null;
+        const pillsSources = stored || lastAssistantSources;
+        renderAssistantMessageFromHistory(msg.content, pillsSources);
+        if (stored) {
+          lastAssistantSources = stored;
+        }
+      }
+    }
+    const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+    if (urlbarViewBodyInner) {
+      urlbarViewBodyInner.style.display = "";
+    }
+  }
+
+  function buildApiMessagesFromHistory(apiHistory, searchContext) {
+    const toApiMessage = (m) => ({ role: m.role, content: m.content });
+    const languageSystemMessage = { role: "system", content: LANGUAGE_SYSTEM_INSTRUCTION };
+    if (searchContext) {
+      const lastUserMessageIndex = apiHistory.length - 1;
+      return [
+        languageSystemMessage,
+        ...apiHistory.slice(0, lastUserMessageIndex).map(toApiMessage),
+        { role: "system", content: searchContext },
+        toApiMessage(apiHistory[lastUserMessageIndex])
+      ];
+    }
+    return [languageSystemMessage, ...apiHistory.map(toApiMessage)];
+  }
+
   function buildSessionFromConversation(urlbar) {
     if (!conversationHistory || conversationHistory.length === 0) {
       log("Skipped building history session: empty conversationHistory");
@@ -654,6 +769,10 @@
     }
     removeLlmHistoryRowsFromResults();
     conversationHistory = [];
+    const providerKey = urlbar.getAttribute("llm-provider");
+    if (providerKey) {
+      delete liveConversationsByProvider[providerKey];
+    }
     currentSessionId = null; /* Next question starts a new session */
     urlbarInput.setAttribute("placeholder", "Ask anything...");
     const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
@@ -1314,6 +1433,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
           if (wasShowingHistoryList) {
             removeLlmHistoryRowsFromResults();
             currentSessionId = null;
+            conversationHistory = [];
           }
 
           // Add user message to conversation
@@ -1321,6 +1441,8 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
             role: "user",
             content: query
           });
+          // Snapshot before any async work so blur/deactivate cannot wipe context mid-request
+          const historyForApi = snapshotConversationHistory();
           
           // Clear the input immediately after sending
           currentQuery = "";
@@ -1334,7 +1456,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
           // Reset history navigation when sending a new message
           historyIndex = -1;
           lastHistoryProviderKey = urlbar.getAttribute("llm-provider") || null;
-          sendToLLM(urlbar, urlbarInput, query);
+          sendToLLM(urlbar, urlbarInput, query, historyForApi);
         }
       } else if (e.key === "Escape" && isLLMMode) {
         e.preventDefault();
@@ -1432,6 +1554,10 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
           !!onHistoryRow;
         
         if (document.activeElement !== urlbarInput && isLLMMode && !clickedInsideLLM) {
+          if (urlbar.hasAttribute("is-llm-thinking")) {
+            log("Blur ignored - LLM request in progress");
+            return;
+          }
           log("Blur deactivating - activeElement:", activeElement?.tagName, "relatedTarget:", relatedTarget?.tagName);
           deactivateLLMMode(urlbar, urlbarInput, true);
         } else if (clickedInsideLLM) {
@@ -1457,6 +1583,10 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
               document.querySelector(".llm-conversation-container:hover") ||
               document.querySelector(`.urlbarView-row[${ATTR_LLM_HISTORY_ROW}]:hover`);
             if (urlbarView.hidden && isLLMMode && !overLlmContent) {
+              if (urlbar.hasAttribute("is-llm-thinking")) {
+                log("View hide ignored - LLM request in progress");
+                return;
+              }
               log("View hidden, deactivating");
               deactivateLLMMode(urlbar, urlbarInput, true);
             }
@@ -1483,6 +1613,10 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
               document.querySelector(".llm-conversation-container:hover") ||
               document.querySelector(`.urlbarView-row[${ATTR_LLM_HISTORY_ROW}]:hover`);
             if (!overLlmContent) {
+              if (urlbar.hasAttribute("is-llm-thinking")) {
+                log("Urlbar close ignored - LLM request in progress");
+                return;
+              }
               log("Urlbar closed, deactivating");
               deactivateLLMMode(urlbar, urlbarInput, true);
             }
@@ -2916,8 +3050,10 @@ Provide a direct, informative answer with citations:`;
     
     // Save and change placeholder text
     originalPlaceholder = urlbarInput.getAttribute("placeholder") || "";
+    const restoredLive = restoreLiveConversation(providerKey);
     // Use different placeholder for follow-ups vs initial query
-    const placeholder = conversationHistory.length > 0 ? "Ask a follow-up..." : "Ask anything...";
+    const placeholder =
+      conversationHistory.length > 0 ? "Ask a follow-up..." : "Ask anything...";
     urlbarInput.setAttribute("placeholder", placeholder);
     
     // Hide native suggestions completely
@@ -2927,7 +3063,7 @@ Provide a direct, informative answer with citations:`;
     }
     
     // Only hide the results container if there's no conversation yet
-    if (conversationHistory.length === 0) {
+    if (conversationHistory.length === 0 && !restoredLive) {
       const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
       if (urlbarViewBodyInner) {
         urlbarViewBodyInner.style.display = "none";
@@ -2993,6 +3129,9 @@ Provide a direct, informative answer with citations:`;
   function deactivateLLMMode(urlbar, urlbarInput, restoreURL = false) {
     // Persist the current conversation (if any) before clearing state
     maybeSaveConversationToHistory(urlbar);
+
+    const providerKey = urlbar.getAttribute("llm-provider");
+    stashLiveConversation(providerKey);
 
     isLLMMode = false;
     currentProvider = null;
@@ -3438,10 +3577,19 @@ Provide a direct, informative answer with citations:`;
     return { row: messageDiv, title: contentDiv };
   }
 
-  async function sendToLLM(urlbar, urlbarInput, query) {
+  async function sendToLLM(urlbar, urlbarInput, query, historyForApi = null) {
     if (!currentProvider || !query.trim()) {
       return;
     }
+
+    const apiHistory = historyForApi || snapshotConversationHistory();
+    log(
+      "sendToLLM with",
+      apiHistory.length,
+      "history messages for API (in-memory:",
+      conversationHistory.length,
+      ")"
+    );
 
     // Check API key for non-local providers
     if (currentProvider.apiKey !== null && currentProvider.apiKey === "") {
@@ -3476,15 +3624,17 @@ Provide a direct, informative answer with citations:`;
 
     // Set thinking state
     urlbar.setAttribute("is-llm-thinking", "true");
-    
-    // Clear previous search sources
-    currentSearchSources = [];
 
-    // Abort any previous request
+    // Abort any previous request (keep partial assistant text in history first)
     if (abortController) {
+      flushPartialAssistantToHistory();
       abortController.abort();
     }
     abortController = new AbortController();
+    
+    // Clear previous search sources and start a fresh assistant buffer for this turn
+    currentSearchSources = [];
+    currentAssistantMessage = "";
 
     try {
       // Perform web search if enabled and the model decides it needs it
@@ -3497,7 +3647,7 @@ Provide a direct, informative answer with citations:`;
       let needsSearch = false;
       let searchQuery = query;
       if (isWebSearchEnabled() && supportsWebSearch) {
-        const isFollowUp = conversationHistory.length > 1;
+        const isFollowUp = apiHistory.length > 1;
 
         // Follow-up where user explicitly asks to search: run a real search for this turn (not classifier).
         if (isFollowUp && isExplicitSearchRequest(query)) {
@@ -3549,23 +3699,11 @@ Provide a direct, informative answer with citations:`;
       // Clear spinner and show thinking text
       titleElement.textContent = "Thinking...";
       
-      // Prepare messages: language instruction first, then conversation (and search context if any)
-      // Strip non-API fields (e.g. sources) — providers only accept role + content
-      const toApiMessage = (m) => ({ role: m.role, content: m.content });
-      const languageSystemMessage = { role: "system", content: LANGUAGE_SYSTEM_INSTRUCTION };
-      let messagesToSend;
+      const messagesToSend = buildApiMessagesFromHistory(apiHistory, searchContext);
       if (searchContext) {
-        const lastUserMessageIndex = conversationHistory.length - 1;
-        messagesToSend = [
-          languageSystemMessage,
-          ...conversationHistory.slice(0, lastUserMessageIndex).map(toApiMessage),
-          { role: "system", content: searchContext },
-          toApiMessage(conversationHistory[lastUserMessageIndex])
-        ];
         log('Added web search context to messages');
-      } else {
-        messagesToSend = [ languageSystemMessage, ...conversationHistory.map(toApiMessage) ];
       }
+      log("API payload:", messagesToSend.length, "messages");
       
       await streamResponse(messagesToSend, titleElement, abortController.signal);
       
@@ -3616,11 +3754,14 @@ Provide a direct, informative answer with citations:`;
 
       // Persist conversation after each assistant response (and on deactivate)
       maybeSaveConversationToHistory(urlbar);
+      const activeProviderKey = urlbar.getAttribute("llm-provider");
+      stashLiveConversation(activeProviderKey);
 
       urlbar.removeAttribute("is-llm-thinking");
     } catch (error) {
       logError("LLM request error:", error);
       if (error.name === "AbortError") {
+        flushPartialAssistantToHistory();
         titleElement.textContent = "Request cancelled";
       } else {
         const msg = (error?.message || String(error)).toLowerCase();
