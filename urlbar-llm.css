@@ -546,8 +546,8 @@
   overflow-x: auto;
   font-size: 11px;
   line-height: 1.45;
-  color: var(--fgColor-default);
-  background-color: var(--bgColor-muted);
+  color: light-dark(rgba(0, 0, 0, 0.85), rgba(255, 255, 255, 0.9));
+  background-color: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.07));
   border-radius: 10px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) pre code {
@@ -599,8 +599,15 @@
   margin: 6px 0;
   border-radius: 10px;
   overflow: hidden;
-  background-color: var(--bgColor-muted);
-  border: 1px solid var(--borderColor-muted);
+  /* Zen follows light-dark(), not prefers-color-scheme — match .llm-message-assistant surfaces */
+  --llm-code-bg: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.07));
+  --llm-code-header-bg: light-dark(rgba(0, 0, 0, 0.09), rgba(255, 255, 255, 0.1));
+  --llm-code-border: light-dark(rgba(0, 0, 0, 0.12), rgba(255, 255, 255, 0.12));
+  --llm-code-fg: light-dark(rgba(0, 0, 0, 0.85), rgba(255, 255, 255, 0.9));
+  --llm-code-fg-muted: light-dark(rgba(0, 0, 0, 0.55), rgba(255, 255, 255, 0.6));
+  --llm-code-btn-bg: light-dark(rgba(0, 0, 0, 0.04), rgba(255, 255, 255, 0.06));
+  background-color: var(--llm-code-bg);
+  border: 1px solid var(--llm-code-border);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper pre {
   margin: 0;
@@ -616,8 +623,8 @@
   justify-content: space-between;
   gap: 8px;
   padding: 5px 8px 5px 10px;
-  background-color: color-mix(in srgb, var(--bgColor-muted) 82%, var(--fgColor-default) 18%);
-  border-bottom: 1px solid var(--borderColor-muted);
+  background-color: var(--llm-code-header-bg);
+  border-bottom: 1px solid var(--llm-code-border);
   user-select: none;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-lang {
@@ -625,7 +632,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  color: var(--fgColor-muted);
+  color: var(--llm-code-fg-muted);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-lang-icon {
   width: 13px;
@@ -642,7 +649,7 @@
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
-  color: var(--fgColor-muted);
+  color: var(--llm-code-fg-muted);
   text-transform: lowercase;
   white-space: nowrap;
   overflow: hidden;
@@ -672,18 +679,18 @@
   gap: 5px;
   flex-shrink: 0;
   padding: 3px 8px;
-  border: 1px solid var(--borderColor-default);
+  border: 1px solid var(--llm-code-border);
   border-radius: 6px;
-  background-color: var(--bgColor-neutral-muted);
-  color: var(--fgColor-muted);
+  background-color: var(--llm-code-btn-bg);
+  color: var(--llm-code-fg-muted);
   cursor: pointer;
   -moz-appearance: none;
   appearance: none;
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn:hover {
-  color: var(--fgColor-default);
-  border-color: var(--fgColor-muted);
+  color: var(--llm-code-fg);
+  border-color: var(--llm-code-fg-muted);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-icon {
   width: 12px;
@@ -713,12 +720,12 @@
    highlight.js token theme (compact dark, matches card)
    ============================================ */
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs {
-  color: var(--fgColor-default);
+  color: var(--llm-code-fg, light-dark(rgba(0, 0, 0, 0.85), rgba(255, 255, 255, 0.9)));
   background: transparent;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-comment,
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-quote {
-  color: var(--fgColor-muted);
+  color: var(--llm-code-fg-muted, light-dark(rgba(0, 0, 0, 0.55), rgba(255, 255, 255, 0.6)));
   font-style: italic;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-keyword,
@@ -749,7 +756,7 @@
   color: light-dark(#8250df, #d2a8ff);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-meta {
-  color: var(--fgColor-muted);
+  color: var(--llm-code-fg-muted, light-dark(rgba(0, 0, 0, 0.55), rgba(255, 255, 255, 0.6)));
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-emphasis {
   font-style: italic;
