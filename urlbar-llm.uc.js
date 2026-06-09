@@ -1657,19 +1657,27 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       }
     }
 
+    // Remove <br> that sit next to block-level/code-block siblings, leading/trailing <br>,
+    // and collapse consecutive <br> runs. Skips whitespace-only text nodes; preserves
+    // genuine intra-paragraph line breaks (text on both sides).
+    const isBlockEl = (el) =>
+      el && el.nodeType === 1 && (blockTag.test(el.tagName) || isCodeWrapper(el));
+    const meaningfulSibling = (node, dir) => {
+      let n = dir === "prev" ? node.previousSibling : node.nextSibling;
+      while (n) {
+        if (n.nodeType === 3) {
+          if (n.textContent.trim()) return n; // non-empty text counts as content
+          n = dir === "prev" ? n.previousSibling : n.nextSibling;
+          continue;
+        }
+        return n;
+      }
+      return null;
+    };
     [...root.querySelectorAll("br")].forEach((br) => {
-      const prev = br.previousElementSibling;
-      const next = br.nextElementSibling;
-      const prevB = prev && (blockTag.test(prev.tagName) || isCodeWrapper(prev));
-      const nextB = next && (blockTag.test(next.tagName) || isCodeWrapper(next));
-      if (prevB && (nextB || !next)) {
-        br.remove();
-        return;
-      }
-      if (!prev && nextB) {
-        br.remove();
-      }
-      if (prev && prev.tagName === "LI" && next && next.tagName === "LI") {
+      const prev = meaningfulSibling(br, "prev");
+      const next = meaningfulSibling(br, "next");
+      if (!prev || !next || isBlockEl(prev) || isBlockEl(next)) {
         br.remove();
       }
     });
