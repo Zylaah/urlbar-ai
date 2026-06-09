@@ -884,10 +884,11 @@
   }
 
   // ============================================
-  // Load marked (markdown parser) and DOMPurify (sanitizer)
+  // Load marked (markdown parser), DOMPurify (sanitizer), highlight.js (syntax highlighting)
   // ============================================
   let markedLib = null;
   let DOMPurifyLib = null;
+  let hljsLib = null;
   try {
     const currentScriptPath = Components.stack.filename;
     const scriptDir = currentScriptPath.substring(0, currentScriptPath.lastIndexOf('/') + 1);
@@ -902,6 +903,17 @@
       markedLib = null;
       DOMPurifyLib = null;
       logWarn("marked or DOMPurify failed to load, using fallback markdown parser");
+    }
+    try {
+      Services.scriptloader.loadSubScript(vendorsDir + "highlight.min.js");
+      hljsLib = (typeof hljs !== "undefined") ? hljs : null;
+      if (hljsLib) {
+        log("Loaded highlight.js from", vendorsDir);
+      } else {
+        logWarn("highlight.js failed to expose hljs; code blocks will render without highlighting");
+      }
+    } catch (hlErr) {
+      logWarn("Could not load highlight.js:", hlErr.message, "- code blocks will render without highlighting");
     }
   } catch (e) {
     logWarn("Could not load marked/DOMPurify:", e.message, "- using fallback markdown parser");
@@ -1530,10 +1542,37 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
    * excessive blank lines (outside fenced ``` blocks) so GFM does not emit huge `<p>` gaps
    * or extra thematic breaks from inconsistent spacing.
    */
+  /**
+   * Ensure fenced code blocks are balanced so marked closes them correctly.
+   * Fixes "whole message renders as a code block" when a closing fence is missing
+   * (mid-stream, or when the model forgets/mangles it) and de-indents fence-only lines
+   * so a leading-whitespace fence still terminates the block.
+   */
+  function balanceCodeFences(text) {
+    if (!text || typeof text !== "string") {
+      return text;
+    }
+    // De-indent lines that are nothing but a fence (``` or ~~~), optionally with a language.
+    let out = text.replace(/^[ \t]+(`{3,}|~{3,})([^\n`]*)$/gm, "$1$2");
+
+    // Count top-level fence markers (at line start). Odd count => an unterminated block.
+    const fenceLines = out.match(/^(`{3,}|~{3,})/gm) || [];
+    if (fenceLines.length % 2 === 1) {
+      const last = fenceLines[fenceLines.length - 1];
+      const closer = last[0].repeat(last.length); // match the marker char/length of the opener
+      if (!/\n$/.test(out)) {
+        out += "\n";
+      }
+      out += closer + "\n";
+    }
+    return out;
+  }
+
   function normalizeAssistantMarkdownText(text) {
     if (text == null || typeof text !== "string") {
       return text;
     }
+    text = balanceCodeFences(text);
     const chunks = text.split(/(```[\s\S]*?```)/g);
     for (let i = 0; i < chunks.length; i++) {
       if (i % 2 === 1) {
@@ -1673,53 +1712,140 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     }
   }
 
+  /** Extract the language token from a <code class="language-xxx"> element. */
+  function getCodeLanguage(code) {
+    const cls = (code && code.className) || "";
+    const m = cls.match(/(?:^|\s)language-([\w+#-]+)/i);
+    return m ? m[1].toLowerCase() : "";
+  }
+
+  /** Friendly display name for a language token. */
+  function displayLanguageName(lang) {
+    if (!lang) return "code";
+    const map = {
+      js: "javascript",
+      ts: "typescript",
+      sh: "bash",
+      shell: "bash",
+      zsh: "bash",
+      py: "python",
+      rb: "ruby",
+      yml: "yaml",
+      md: "markdown",
+      "c++": "cpp",
+      "c#": "csharp",
+      cs: "csharp",
+      ps: "powershell",
+      ps1: "powershell",
+    };
+    return map[lang] || lang;
+  }
+
+  /** Run highlight.js over a <code> element (operates on its text only — safe post-sanitize). */
+  function highlightCodeElement(code, lang) {
+    if (!hljsLib || !code) return;
+    try {
+      const raw = code.textContent || "";
+      const canHighlight = lang && typeof hljsLib.getLanguage === "function" && hljsLib.getLanguage(lang);
+      const result = canHighlight
+        ? hljsLib.highlight(raw, { language: lang, ignoreIllegals: true })
+        : (typeof hljsLib.highlightAuto === "function" ? hljsLib.highlightAuto(raw) : null);
+      if (result && typeof result.value === "string") {
+        code.innerHTML = result.value;
+        code.classList.add("hljs");
+      }
+    } catch (e) {
+      // Leave the plain (already-sanitized) text in place on any failure.
+    }
+  }
+
+  function copyTextToClipboard(text, onDone) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onDone).catch(() => {});
+      return;
+    }
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      onDone();
+    } catch (err) {}
+  }
+
   function attachCopyButtonsToCodeBlocks(container) {
     if (!container) return;
     container.querySelectorAll('pre').forEach((pre) => {
       const code = pre.querySelector('code');
       if (!code) return;
+
+      const lang = getCodeLanguage(code);
+
       const wrapper = document.createElement('div');
       wrapper.className = 'llm-code-block-wrapper';
       pre.parentNode.insertBefore(wrapper, pre);
-      wrapper.appendChild(pre);
+
+      // Header bar: language (left) + Copy button (right)
+      const header = document.createElement('div');
+      header.className = 'llm-code-header';
+
+      const langLabel = document.createElement('span');
+      langLabel.className = 'llm-code-lang';
+      const langIcon = document.createElement('span');
+      langIcon.className = 'llm-code-lang-icon';
+      langIcon.setAttribute('aria-hidden', 'true');
+      const langText = document.createElement('span');
+      langText.className = 'llm-code-lang-text';
+      langText.textContent = displayLanguageName(lang);
+      langLabel.appendChild(langIcon);
+      langLabel.appendChild(langText);
+
       const btn = document.createElement('button');
       btn.className = 'llm-code-copy-btn';
       btn.type = 'button';
       btn.setAttribute('aria-label', 'Copy code');
+      const btnIcon = document.createElement('span');
+      btnIcon.className = 'llm-code-copy-icon';
+      btnIcon.setAttribute('aria-hidden', 'true');
+      const btnText = document.createElement('span');
+      btnText.className = 'llm-code-copy-text';
+      btnText.textContent = 'Copy';
+      btn.appendChild(btnIcon);
+      btn.appendChild(btnText);
       btn.addEventListener('mousedown', (e) => {
         e.preventDefault();
       });
-      wrapper.insertBefore(btn, pre);
+
+      header.appendChild(langLabel);
+      header.appendChild(btn);
+
+      wrapper.appendChild(header);
+      wrapper.appendChild(pre);
+
+      // Syntax highlighting (after move into wrapper; operates on text only)
+      highlightCodeElement(code, lang);
+
       btn.addEventListener('click', () => {
         const text = code.textContent || '';
         const showCopied = () => {
           btn.classList.add('llm-copy-copied');
-          const prevLabel = btn.getAttribute('aria-label') || 'Copy code';
+          btnText.textContent = 'Copied';
           btn.setAttribute('aria-label', 'Copied');
           setTimeout(() => {
             btn.classList.remove('llm-copy-copied');
-            btn.setAttribute('aria-label', prevLabel);
+            btnText.textContent = 'Copy';
+            btn.setAttribute('aria-label', 'Copy code');
           }, 1500);
         };
         const afterCopy = () => {
           showCopied();
           setTimeout(() => refocusUrlbarAfterLinkIfStillInLlmMode(), LIMITS.FOCUS_RESTORE_DELAY);
         };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(afterCopy).catch(() => {});
-        } else {
-          try {
-            const ta = document.createElement('textarea');
-            ta.value = text;
-            ta.style.position = 'fixed';
-            ta.style.left = '-9999px';
-            document.body.appendChild(ta);
-            ta.select();
-            document.execCommand('copy');
-            document.body.removeChild(ta);
-            afterCopy();
-          } catch (err) {}
-        }
+        copyTextToClipboard(text, afterCopy);
       });
     });
   }

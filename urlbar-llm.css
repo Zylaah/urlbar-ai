@@ -541,15 +541,14 @@
   border-radius: 3px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) pre {
-  margin: 3px 0;
-  padding: 4px 6px;
+  margin: 6px 0;
+  padding: 10px 12px;
   overflow-x: auto;
   font-size: 11px;
-  line-height: 1.3;
-  color: rgba(255, 255, 255, 0.93);
-  background-color: #59636e;
-  border-radius: 4px;
-  border: 1px solid color-mix(in srgb, #59636e 75%, #000 25%);
+  line-height: 1.45;
+  color: #c8d3e0;
+  background-color: #181a20;
+  border-radius: 10px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) pre code {
   padding: 0;
@@ -592,13 +591,62 @@
   height: 0;
   padding: 0;
 }
+/* ============================================
+   Modern code block card (header + highlight.js body)
+   ============================================ */
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper {
   position: relative;
-  margin: 3px 0;
+  margin: 6px 0;
+  border-radius: 10px;
+  overflow: hidden;
+  background-color: #181a20;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-block-wrapper pre {
   margin: 0;
+  border-radius: 0;
+  border: 0;
+  background: transparent;
 }
+
+/* Header bar */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px 5px 10px;
+  background-color: #20232b;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  user-select: none;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-lang {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-lang-icon {
+  width: 13px;
+  height: 13px;
+  flex-shrink: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%2391a0b5' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m8 9l-3 3l3 3m8-6l3 3l-3 3'/%3E%3C/svg%3E");
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-lang-text {
+  font-family: var(--fontStack-monospace);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #91a0b5;
+  text-transform: lowercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Check icon derived from Flowbite Icons (Themesberg) — same path as copy feedback SVG */
 @keyframes llm-code-copy-check-pop {
   0% {
@@ -614,40 +662,96 @@
     opacity: 1;
   }
 }
+
+/* Copy button (icon + label) */
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  z-index: 10;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 16px;
-  padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: 3px;
-  background-color: rgba(255, 255, 255, 0.12);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%23d1d7e0' d='M15.24 2h-3.894c-1.764 0-3.162 0-4.255.148c-1.126.152-2.037.472-2.755 1.193c-.719.721-1.038 1.636-1.189 2.766C3 7.205 3 8.608 3 10.379v5.838c0 1.508.92 2.8 2.227 3.342c-.067-.91-.067-2.185-.067-3.247v-5.01c0-1.281 0-2.386.118-3.27c.127-.948.413-1.856 1.147-2.593s1.639-1.024 2.583-1.152c.88-.118 1.98-.118 3.257-.118h3.07c1.276 0 2.374 0 3.255.118A3.6 3.6 0 0 0 15.24 2'/%3E%3Cpath fill='%23d1d7e0' d='M6.6 11.397c0-2.726 0-4.089.844-4.936c.843-.847 2.2-.847 4.916-.847h2.88c2.715 0 4.073 0 4.917.847S21 8.671 21 11.397v4.82c0 2.726 0 4.089-.843 4.936c-.844.847-2.202.847-4.917.847h-2.88c-2.715 0-4.073 0-4.916-.847c-.844-.847-.844-2.21-.844-4.936z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 11px 11px;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background-color: rgba(255, 255, 255, 0.04);
+  color: #c8d3e0;
   cursor: pointer;
   -moz-appearance: none;
   appearance: none;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
-  transform-origin: center center;
-}
-:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn.llm-copy-copied {
-  /* Same markup as user Flowbite check data URL; stroke=%23d1d7e0 (currentColor is ineffective in SVG-as-image backgrounds) */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='1em' height='1em' viewBox='0 0 24 24'%3E%3C!-- Icon from Flowbite Icons by Themesberg - https://github.com/themesberg/flowbite-icons/blob/main/LICENSE --%3E%3Cpath fill='none' stroke='%23d1d7e0' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M5 11.917L9.724 16.5L19 7.5'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 11px 11px;
-  animation: llm-code-copy-check-pop 0.42s cubic-bezier(0.34, 1.45, 0.64, 1) both;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn:hover {
-  opacity: 0.95;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 12px 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%23c8d3e0' d='M15.24 2h-3.894c-1.764 0-3.162 0-4.255.148c-1.126.152-2.037.472-2.755 1.193c-.719.721-1.038 1.636-1.189 2.766C3 7.205 3 8.608 3 10.379v5.838c0 1.508.92 2.8 2.227 3.342c-.067-.91-.067-2.185-.067-3.247v-5.01c0-1.281 0-2.386.118-3.27c.127-.948.413-1.856 1.147-2.593s1.639-1.024 2.583-1.152c.88-.118 1.98-.118 3.257-.118h3.07c1.276 0 2.374 0 3.255.118A3.6 3.6 0 0 0 15.24 2'/%3E%3Cpath fill='%23c8d3e0' d='M6.6 11.397c0-2.726 0-4.089.844-4.936c.843-.847 2.2-.847 4.916-.847h2.88c2.715 0 4.073 0 4.917.847S21 8.671 21 11.397v4.82c0 2.726 0 4.089-.843 4.936c-.844.847-2.202.847-4.917.847h-2.88c-2.715 0-4.073 0-4.916-.847c-.844-.847-.844-2.21-.844-4.936z'/%3E%3C/svg%3E");
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn.llm-copy-copied .llm-code-copy-icon {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='none' stroke='%237ee787' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M5 11.917L9.724 16.5L19 7.5'/%3E%3C/svg%3E");
+  animation: llm-code-copy-check-pop 0.42s cubic-bezier(0.34, 1.45, 0.64, 1) both;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-text {
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-code-copy-btn.llm-copy-copied .llm-code-copy-text {
+  color: #7ee787;
+}
+
+/* ============================================
+   highlight.js token theme (compact dark, matches card)
+   ============================================ */
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs {
+  color: #c8d3e0;
+  background: transparent;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-comment,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-quote {
+  color: #7d8799;
+  font-style: italic;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-keyword,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-selector-tag,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-built_in,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-name {
+  color: #ff9d5c;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-string,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-attr,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-symbol,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-bullet {
+  color: #7ee787;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-number,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-literal {
+  color: #f0c674;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-title,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-function .hljs-title,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-section {
+  color: #79c0ff;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-variable,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-template-variable,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-type,
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-attribute {
+  color: #d2a8ff;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-meta {
+  color: #7d8799;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-emphasis {
+  font-style: italic;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .hljs-strong {
+  font-weight: 600;
 }
 
 /* ============================================
