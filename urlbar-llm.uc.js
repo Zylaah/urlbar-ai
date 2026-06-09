@@ -1588,6 +1588,14 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     return chunks.join("");
   }
 
+  /** Replace thematic breaks (<hr>) with a single line break. */
+  function replaceHorizontalRulesWithBreaks(html) {
+    if (!html || typeof html !== "string") {
+      return html;
+    }
+    return html.replace(/<hr\b[^>]*\/?>/gi, "<br />");
+  }
+
   /**
    * Strip noisy <br> between block-level tags (model/marked often emits these).
    */
@@ -1701,9 +1709,10 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
         // Add CSS classes and link attributes for our styling/behavior
         const withClasses = withCitations
           .replace(/<table>/g, '<table class="llm-markdown-table">')
-          .replace(/<hr>/g, '<hr class="llm-markdown-hr">')
           .replace(/<a href=/g, '<a target="_blank" rel="noopener" href=');
-        const compacted = compactAssistantMarkdownHtmlString(withClasses.trim());
+        const compacted = compactAssistantMarkdownHtmlString(
+          replaceHorizontalRulesWithBreaks(withClasses.trim())
+        );
         const sanitized = DOMPurifyLib.sanitize(compacted, {
           ALLOWED_URI_REGEXP: /^https?:\/\//i,
           ADD_ATTR: ["target", "rel", "data-source"]
@@ -2048,8 +2057,8 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     // Match [1], [2], [3] etc. but not [text](url) links which were already converted
     html = html.replace(/\[(\d+)\](?!\()/g, '<span class="llm-citation-marker" data-source="$1"></span>');
     
-    // Horizontal rule (---, ***, ___) - must be before line breaks
-    html = html.replace(/^(?:---+|\*\*\*+|___+)\s*$/gm, '<hr class="llm-markdown-hr"/>');
+    // Horizontal rule (---, ***, ___) → single line break
+    html = html.replace(/^(?:---+|\*\*\*+|___+)\s*$/gm, "<br />");
     
     // Line breaks
     html = html.replace(/\n/g, '<br/>');
