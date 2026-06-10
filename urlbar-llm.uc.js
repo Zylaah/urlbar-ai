@@ -1898,6 +1898,57 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
    * (mid-stream, or when the model forgets/mangles it) and de-indents fence-only lines
    * so a leading-whitespace fence still terminates the block.
    */
+  /**
+   * Remove accidental leading indentation inside a code block (common when the LLM
+   * indents ``` fences inside lists or numbered steps). Preserves relative indent
+   * when lines differ; strips only the minimum shared prefix on non-empty lines.
+   */
+  function stripCommonLeadingIndent(text) {
+    if (!text || typeof text !== "string") {
+      return text;
+    }
+    const lines = text.replace(/\r\n/g, "\n").split("\n");
+    const nonEmpty = lines.filter((line) => line.trim().length > 0);
+    if (!nonEmpty.length) {
+      return "";
+    }
+
+    const minIndent = nonEmpty.reduce((min, line) => {
+      const prefix = line.match(/^[ \t]*/);
+      const len = prefix ? prefix[0].length : 0;
+      return Math.min(min, len);
+    }, Infinity);
+
+    if (!Number.isFinite(minIndent) || minIndent === 0) {
+      return lines.map((line) => line.trimEnd()).join("\n").trim();
+    }
+
+    return lines
+      .map((line) => {
+        if (!line.trim()) {
+          return "";
+        }
+        return line.slice(minIndent).trimEnd();
+      })
+      .join("\n")
+      .trim();
+  }
+
+  /** Dedent the body of a ```…``` chunk before marked parses it. */
+  function normalizeFencedCodeChunk(chunk) {
+    if (!chunk || typeof chunk !== "string") {
+      return chunk;
+    }
+    const m = chunk.match(/^(`{3,})([^\n]*)\n?([\s\S]*?)\n?`{3,}\s*$/);
+    if (!m) {
+      return chunk;
+    }
+    const fence = m[1];
+    const info = m[2];
+    const body = stripCommonLeadingIndent(m[3]);
+    return `${fence}${info}\n${body}\n${fence}`;
+  }
+
   function balanceCodeFences(text) {
     if (!text || typeof text !== "string") {
       return text;
@@ -1926,6 +1977,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     const chunks = text.split(/(```[\s\S]*?```)/g);
     for (let i = 0; i < chunks.length; i++) {
       if (i % 2 === 1) {
+        chunks[i] = normalizeFencedCodeChunk(chunks[i]);
         continue;
       }
       chunks[i] = chunks[i]
@@ -2138,6 +2190,14 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
   }
 
   /** Run highlight.js over a <code> element (operates on its text only — safe post-sanitize). */
+  function normalizeCodeElementText(code) {
+    if (!code) return;
+    const normalized = stripCommonLeadingIndent(code.textContent || "");
+    if (normalized !== code.textContent) {
+      code.textContent = normalized;
+    }
+  }
+
   function highlightCodeElement(code, lang) {
     if (!hljsLib || !code) return;
     try {
@@ -2222,6 +2282,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       wrapper.appendChild(header);
       wrapper.appendChild(pre);
 
+      normalizeCodeElementText(code);
       // Syntax highlighting (after move into wrapper; operates on text only)
       highlightCodeElement(code, lang);
 
@@ -2289,7 +2350,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
         const pre = document.createElement('pre');
         const code = document.createElement('code');
         if (part.lang) code.className = `language-${part.lang}`;
-        code.textContent = part.content.trim();
+        code.textContent = stripCommonLeadingIndent(part.content);
         pre.appendChild(code);
         element.appendChild(pre);
       } else if (part.type === 'table') {
