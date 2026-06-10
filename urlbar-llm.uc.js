@@ -2006,6 +2006,26 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
   }
 
   /**
+   * browser.xhtml is XML; assigning innerHTML rejects HTML5 void tags like <br>.
+   * Self-close void elements so marked/DOMPurify output parses in chrome UI.
+   */
+  function normalizeHtmlFragmentForXul(html) {
+    if (!html || typeof html !== "string") {
+      return html;
+    }
+    const voidTags =
+      "area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr";
+    return html.replace(
+      new RegExp(`<(${voidTags})\\b([^>]*?)(?:\\s*/)?>`, "gi"),
+      (_match, tag, attrs) => {
+        const name = tag.toLowerCase();
+        const trimmed = (attrs || "").trim();
+        return trimmed ? `<${name} ${trimmed}/>` : `<${name}/>`;
+      }
+    );
+  }
+
+  /**
    * Strip noisy <br> between block-level tags (model/marked often emits these).
    */
   function compactAssistantMarkdownHtmlString(html) {
@@ -2148,7 +2168,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
           ALLOWED_URI_REGEXP: /^https?:\/\//i,
           ADD_ATTR: ["target", "rel", "data-source", "class"]
         });
-        element.innerHTML = sanitized.trim();
+        element.innerHTML = normalizeHtmlFragmentForXul(sanitized.trim());
         attachCopyButtonsToCodeBlocks(element);
         normalizeAssistantContentDom(element);
       } catch (e) {
@@ -2358,7 +2378,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
         if (table) element.appendChild(table);
       } else {
         const span = document.createElement('span');
-        span.innerHTML = parseInlineMarkdown(part.content);
+        span.innerHTML = normalizeHtmlFragmentForXul(parseInlineMarkdown(part.content));
         element.appendChild(span);
       }
     }
@@ -2404,7 +2424,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
           const cells = parseTableRow(rows[i]);
           cells.forEach((cell, idx) => {
             const th = document.createElement('th');
-            th.innerHTML = parseInlineMarkdown(cell);
+            th.innerHTML = normalizeHtmlFragmentForXul(parseInlineMarkdown(cell));
             if (alignments[idx]) {
               th.style.textAlign = alignments[idx];
             }
@@ -2423,7 +2443,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
           const cells = parseTableRow(rows[i]);
           cells.forEach((cell, idx) => {
             const td = document.createElement('td');
-            td.innerHTML = parseInlineMarkdown(cell);
+            td.innerHTML = normalizeHtmlFragmentForXul(parseInlineMarkdown(cell));
             if (alignments[idx]) {
               td.style.textAlign = alignments[idx];
             }
