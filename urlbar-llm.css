@@ -472,7 +472,7 @@
 }
 /* Vertical rhythm between block siblings (compact but readable) */
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + .llm-markdown-gap {
-  margin-top: 6px;
+  margin-top: 2px;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + p:not(.llm-markdown-gap),
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) > * + ul,
@@ -595,12 +595,19 @@
 }
 /* Thematic break from markdown (---) → <p class="llm-markdown-gap"><br /></p> */
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-gap {
-  margin: 6px 0;
+  margin: 2px 0;
   padding: 0;
-  line-height: 1.32;
+  line-height: 0.35;
+  font-size: 10px;
+}
+:is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-gap .llm-hr-break {
+  display: block;
+  margin: 0;
+  line-height: 0.35;
 }
 :is(.llm-conversation-container .llm-message-assistant .llm-message-content, .urlbarView-row-llm .urlbarView-title) .llm-markdown-gap:empty {
   margin: 0;
+  line-height: 0;
 }
 /* ============================================
    Modern code block card (header + highlight.js body)
