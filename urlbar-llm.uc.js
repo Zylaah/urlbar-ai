@@ -96,7 +96,9 @@
   let currentProvider = null;
   let currentQuery = "";
   let streamingResultRow = null;
-  let abortController = null;
+  /** @type {{ controller: AbortController, buffer: string, generation: number } | null} */
+  let llmStream = null;
+  let llmStreamGeneration = 0;
   let originalPlaceholder = "";
   let isClickingLink = false; // Track if we're currently clicking a link
   let isSelectingInContainer = false; // Track if user is selecting text in the container
@@ -151,7 +153,6 @@
   /** In-memory sessions per provider, survives deactivate so re-activating restores context */
   const liveConversationsByProvider = {};
   let conversationContainer = null; // Container for all messages
-  let currentAssistantMessage = ""; // Track current streaming response
   let currentSearchSources = []; // Track sources used for current response
 
   // Global conversation history (urlbar is shared; one list, persisted in profile)
@@ -296,7 +297,9 @@
         const index = store.index("providerKey");
         const req = index.getAll(IDBKeyRange.only(providerKey));
         req.onsuccess = () => {
-          const sessions = (req.result || []).filter((s) => s && s.providerKey === providerKey);
+          const sessions = (req.result || [])
+            .filter((s) => s && s.providerKey === providerKey)
+            .map(repairLegacyStoredSession);
           sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
           db.close();
           log("Loaded LLM history from IndexedDB");
@@ -471,25 +474,100 @@
   }
 
   /**
-   * When a stream is aborted mid-response, keep partial text so the next turn has assistant context.
+   * Repair sessions saved before stream lifecycle was fixed (duplicate assistant after user).
    */
-  function flushPartialAssistantToHistory() {
-    const text = (currentAssistantMessage || "").trim();
+  function repairLegacyDuplicateMessages(messages) {
+    if (!Array.isArray(messages) || !messages.length) {
+      return messages || [];
+    }
+    const out = [];
+    for (const m of messages) {
+      if (!m || !m.content) {
+        continue;
+      }
+      const prev = out[out.length - 1];
+      const prevPrev = out[out.length - 2];
+      if (
+        m.role === "assistant" &&
+        prev?.role === "user" &&
+        prevPrev?.role === "assistant" &&
+        (prevPrev.content || "").trim() === (m.content || "").trim()
+      ) {
+        continue;
+      }
+      out.push(m);
+    }
+    return out;
+  }
+
+  function repairLegacyStoredSession(session) {
+    if (!session || !Array.isArray(session.messages)) {
+      return session;
+    }
+    const repaired = repairLegacyDuplicateMessages(session.messages);
+    if (repaired.length === session.messages.length) {
+      return session;
+    }
+    return { ...session, messages: repaired };
+  }
+
+  /**
+   * Persist partial assistant text when a stream is cancelled mid-response.
+   */
+  function commitPartialAssistantToHistory(buffer) {
+    const text = (buffer || "").trim();
     if (!text) {
       return;
     }
     const last = conversationHistory[conversationHistory.length - 1];
-    if (last && last.role === "assistant") {
+    if (last?.role === "assistant") {
       if ((last.content || "").trim() === text) {
         return;
       }
-      last.content = currentAssistantMessage;
+      last.content = buffer;
       log("Updated partial assistant response in conversation history");
       return;
     }
-    if (last && last.role === "user") {
-      conversationHistory.push({ role: "assistant", content: currentAssistantMessage });
-      log("Flushed partial assistant response to conversation history");
+    if (last?.role === "user") {
+      conversationHistory.push({ role: "assistant", content: buffer });
+      log("Committed partial assistant response to conversation history");
+    }
+  }
+
+  /**
+   * Stop the active stream. When persistPartial is true, save buffered tokens first
+   * (superseded turn, deactivate, or explicit cancel).
+   */
+  function interruptLlmStream({ persistPartial = false } = {}) {
+    if (!llmStream) {
+      return;
+    }
+    const { controller, buffer } = llmStream;
+    if (persistPartial) {
+      commitPartialAssistantToHistory(buffer);
+    }
+    try {
+      controller.abort();
+    } catch (e) {}
+    llmStream = null;
+  }
+
+  /**
+   * Start a new LLM stream. Any in-flight stream is interrupted and its partial text is saved.
+   * @returns {{ signal: AbortSignal, generation: number }}
+   */
+  function beginLlmStream() {
+    interruptLlmStream({ persistPartial: true });
+    const generation = ++llmStreamGeneration;
+    const controller = new AbortController();
+    llmStream = { controller, buffer: "", generation };
+    return { signal: controller.signal, generation };
+  }
+
+  /** Release the stream handle for a completed or abandoned turn. */
+  function endLlmStream(generation) {
+    if (llmStream?.generation === generation) {
+      llmStream = null;
     }
   }
 
@@ -875,13 +953,8 @@
 
     resetConversationContextSummary();
 
-    // Abort any in-flight request and clear streaming row
-    if (abortController) {
-      try {
-        abortController.abort();
-      } catch (e) {}
-      abortController = null;
-    }
+    interruptLlmStream({ persistPartial: false });
+
     if (streamingResultRow) {
       streamingResultRow.remove();
       streamingResultRow = null;
@@ -3453,18 +3526,8 @@ Provide a direct, informative answer with citations:`;
     currentProvider = null;
     currentQuery = "";
     
-    // Abort any in-flight LLM request so we don't keep streaming in the background
-    if (abortController) {
-      try {
-        abortController.abort();
-      } catch (e) {
-        // Ignore abort errors
-      }
-      abortController = null;
-    }
-    
-    // Clear any partial assistant state and search sources
-    currentAssistantMessage = "";
+    interruptLlmStream({ persistPartial: true });
+
     currentSearchSources = [];
     historyIndex = -1;
     lastHistoryProviderKey = null;
@@ -3942,16 +4005,8 @@ Provide a direct, informative answer with citations:`;
     // Set thinking state
     urlbar.setAttribute("is-llm-thinking", "true");
 
-    // Abort any previous request (keep partial assistant text in history first)
-    if (abortController) {
-      flushPartialAssistantToHistory();
-      abortController.abort();
-    }
-    abortController = new AbortController();
-    
-    // Clear previous search sources and start a fresh assistant buffer for this turn
+    const { signal, generation: streamGeneration } = beginLlmStream();
     currentSearchSources = [];
-    currentAssistantMessage = "";
 
     try {
       // Perform web search if enabled and the model decides it needs it
@@ -3978,7 +4033,7 @@ Provide a direct, informative answer with citations:`;
 
         if (!needsSearch) {
           titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Evaluating...</span>';
-          needsSearch = await queryNeedsWebSearchLLM(query, isFollowUp, abortController.signal);
+          needsSearch = await queryNeedsWebSearchLLM(query, isFollowUp, signal);
         }
       }
 
@@ -4018,7 +4073,7 @@ Provide a direct, informative answer with citations:`;
 
       const historyForPayload = await prepareHistoryForApi(
         apiHistory,
-        abortController.signal,
+        signal,
         titleElement
       );
       const messagesToSend = buildApiMessagesFromHistory(historyForPayload, searchContext);
@@ -4034,12 +4089,12 @@ Provide a direct, informative answer with citations:`;
         ")"
       );
       
-      await streamResponse(messagesToSend, titleElement, abortController.signal);
+      await streamResponse(messagesToSend, titleElement, signal);
       
       // Add assistant's response to conversation history (include sources for history/session store)
       const assistantEntry = {
         role: "assistant",
-        content: currentAssistantMessage
+        content: llmStream?.buffer || ""
       };
       if (currentSearchSources && currentSearchSources.length > 0) {
         assistantEntry.sources = currentSearchSources.map((s) => ({
@@ -4090,8 +4145,10 @@ Provide a direct, informative answer with citations:`;
     } catch (error) {
       logError("LLM request error:", error);
       if (error.name === "AbortError") {
-        flushPartialAssistantToHistory();
-        titleElement.textContent = "Request cancelled";
+        if (llmStream?.generation === streamGeneration) {
+          commitPartialAssistantToHistory(llmStream.buffer);
+          titleElement.textContent = "Request cancelled";
+        }
       } else {
         const msg = (error?.message || String(error)).toLowerCase();
         const statusMatch = msg.match(/api error:\s*(\d+)/);
@@ -4114,6 +4171,8 @@ Provide a direct, informative answer with citations:`;
         }
       }
       urlbar.removeAttribute("is-llm-thinking");
+    } finally {
+      endLlmStream(streamGeneration);
     }
   }
 
@@ -4155,7 +4214,15 @@ Provide a direct, informative answer with citations:`;
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
-    let accumulatedText = "";
+    let accumulatedText = llmStream?.buffer || "";
+
+    const appendStreamText = (text) => {
+      accumulatedText += text;
+      if (llmStream) {
+        llmStream.buffer = accumulatedText;
+      }
+      scheduleRender();
+    };
 
     // Debounced rendering: batch rapid token updates into a single render pass
     let renderPending = false;
@@ -4215,9 +4282,7 @@ Provide a direct, informative answer with citations:`;
           try {
             const { text } = extractDelta(JSON.parse(data));
             if (text) {
-              accumulatedText += text;
-              currentAssistantMessage = accumulatedText;
-              scheduleRender();
+              appendStreamText(text);
             }
           } catch (e) { /* ignore parse errors */ }
         }
@@ -4227,9 +4292,7 @@ Provide a direct, informative answer with citations:`;
             const json = JSON.parse(trimmed);
             const { text, done: streamDone } = extractDelta(json);
             if (text) {
-              accumulatedText += text;
-              currentAssistantMessage = accumulatedText;
-              scheduleRender();
+              appendStreamText(text);
             }
             if (streamDone) {
               cancelPendingRender();
