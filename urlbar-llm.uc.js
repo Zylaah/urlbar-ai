@@ -48,6 +48,13 @@
     CONTEXT_RECENT_MESSAGES: 6,       // Keep last N messages verbatim (3 exchanges)
     CONTEXT_SUMMARY_INPUT_MAX: 3500,  // Max chars per message fed to summarizer
     CONTEXT_SUMMARY_MAX_TOKENS: 900,  // Max tokens for summary output
+    /** Context-aware web search query generation */
+    SEARCH_CLASSIFIER_TIMEOUT_MS: 8000,
+    SEARCH_QUERY_GEN_TIMEOUT_MS: 12000,
+    SEARCH_QUERY_MAX_LENGTH: 120,
+    SEARCH_QUERY_CACHE_TTL: 5 * 60 * 1000,
+    SEARCH_QUERY_CONTEXT_INPUT_MAX: 800, // Max chars per message in query-gen context
+    SEARCH_QUERY_CONTEXT_MESSAGES: 6,    // Recent turns fed to query generator
   };
 
   const CONTEXT_SUMMARY_HEADER =
@@ -176,6 +183,9 @@
   /** Cached rolling summary: messages [0..conversationContextSummaryEndIndex) are represented in this text */
   let conversationContextSummary = null;
   let conversationContextSummaryEndIndex = 0;
+
+  /** Last successful web search string this session (reuse search result cache when unchanged) */
+  let lastSessionSearchQuery = null;
 
   // Get preferences - Direct access to preference service using Components
   const prefsService = Components.classes["@mozilla.org/preferences-service;1"]
@@ -642,6 +652,7 @@
   function resetConversationContextSummary() {
     conversationContextSummary = null;
     conversationContextSummaryEndIndex = 0;
+    lastSessionSearchQuery = null;
   }
 
   function isContextCompressionEnabled() {
@@ -731,6 +742,34 @@
     }, signal);
     const json = await response.json();
     return (json.choices?.[0]?.message?.content || "").trim();
+  }
+
+  /**
+   * Race an LLM step against a timeout. Parent abort cancels the step; timeout rejects with Error.
+   * @template T
+   * @param {(signal: AbortSignal|null) => Promise<T>} fn
+   * @param {number} timeoutMs
+   * @param {AbortSignal|null} parentSignal
+   * @returns {Promise<T>}
+   */
+  async function withLlmStepTimeout(fn, timeoutMs, parentSignal = null) {
+    if (parentSignal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+    let timer = null;
+    const timeoutPromise = new Promise((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`LLM step timed out after ${timeoutMs}ms`)),
+        timeoutMs
+      );
+    });
+    try {
+      return await Promise.race([fn(parentSignal), timeoutPromise]);
+    } finally {
+      if (timer !== null) {
+        clearTimeout(timer);
+      }
+    }
   }
 
   /**
@@ -1457,6 +1496,172 @@
     return (query || "").trim();
   }
 
+  function isContextAwareSearchQueryEnabled() {
+    return getPref("extension.urlbar-llm.context-search-query-enabled", true);
+  }
+
+  function formatTranscriptForSearchQuery(messages) {
+    if (!messages || !messages.length) {
+      return "";
+    }
+    return messages
+      .map((m) => {
+        const role = m.role === "assistant" ? "Assistant" : "User";
+        const body = clipTextForSummary(m.content || "", LIMITS.SEARCH_QUERY_CONTEXT_INPUT_MAX);
+        return `${role}: ${body}`;
+      })
+      .join("\n");
+  }
+
+  /**
+   * Normalize model output into a single search-engine query string.
+   * @param {string} raw
+   * @returns {string}
+   */
+  function sanitizeSearchQuery(raw) {
+    if (!raw || typeof raw !== "string") {
+      return "";
+    }
+    let q = raw
+      .split(/\r?\n/)[0]
+      .replace(/^["'`]+|["'`]+$/g, "")
+      .replace(/^(search query|query|recherche)\s*:\s*/i, "")
+      .replace(/^["'`]+|["'`]+$/g, "")
+      .trim();
+    q = q.replace(/\s+/g, " ");
+    if (q.length > LIMITS.SEARCH_QUERY_MAX_LENGTH) {
+      q = q.slice(0, LIMITS.SEARCH_QUERY_MAX_LENGTH).trim();
+    }
+    return q.length >= 2 ? q : "";
+  }
+
+  function buildSearchQueryCacheKey(apiHistory, userQuery) {
+    const recent = (apiHistory || []).slice(-LIMITS.SEARCH_QUERY_CONTEXT_MESSAGES);
+    const payload = JSON.stringify({
+      q: userQuery,
+      r: recent.map((m) => ({
+        role: m.role,
+        c: (m.content || "").slice(0, 200)
+      }))
+    });
+    let hash = 0;
+    for (let i = 0; i < payload.length; i++) {
+      hash = ((hash << 5) - hash + payload.charCodeAt(i)) | 0;
+    }
+    return String(hash);
+  }
+
+  /**
+   * Heuristic search string when LLM query generation fails or is disabled.
+   * @param {string} userQuery
+   * @param {Array<{role: string, content: string}>} apiHistory
+   * @returns {string}
+   */
+  function resolveFallbackSearchQuery(userQuery, apiHistory) {
+    const q = (userQuery || "").trim();
+    if (q.length >= 40) {
+      return q.slice(0, LIMITS.SEARCH_QUERY_MAX_LENGTH);
+    }
+    const extracted = explicitFollowUpSearchQuery(q);
+    if (extracted.length >= 2 && extracted.length < q.length) {
+      return extracted.slice(0, LIMITS.SEARCH_QUERY_MAX_LENGTH);
+    }
+    if (apiHistory && apiHistory.length > 1) {
+      const users = apiHistory.filter(
+        (m) => m && m.role === "user" && typeof m.content === "string"
+      );
+      if (users.length >= 2) {
+        const prev = users[users.length - 2].content.trim();
+        if (prev.length >= 3) {
+          const combined = `${prev} ${q}`.replace(/\s+/g, " ").trim();
+          return combined.slice(0, LIMITS.SEARCH_QUERY_MAX_LENGTH);
+        }
+      }
+    }
+    return q.slice(0, LIMITS.SEARCH_QUERY_MAX_LENGTH);
+  }
+
+  // Cache for LLM-generated search queries (avoids duplicate API calls within a session)
+  const searchQueryGenCache = new Map();
+
+  function cacheSearchQueryGen(key, query) {
+    if (searchQueryGenCache.size >= LIMITS.MAX_CACHE_SIZE) {
+      const oldestKey = searchQueryGenCache.keys().next().value;
+      searchQueryGenCache.delete(oldestKey);
+    }
+    searchQueryGenCache.set(key, { query, timestamp: Date.now() });
+  }
+
+  /**
+   * Ask the LLM for a concise, context-aware web search query (sequential step before searchWeb).
+   * @param {string} userQuery - Current user message (last entry in apiHistory)
+   * @param {Array<{role: string, content: string}>} apiHistory
+   * @param {AbortSignal|null} signal
+   * @returns {Promise<string>}
+   */
+  async function generateWebSearchQueryLLM(userQuery, apiHistory, signal = null) {
+    const fallback = resolveFallbackSearchQuery(userQuery, apiHistory);
+
+    if (!isContextAwareSearchQueryEnabled()) {
+      log("Context-aware search query disabled, using fallback:", fallback);
+      return fallback;
+    }
+
+    const cacheKey = buildSearchQueryCacheKey(apiHistory, userQuery);
+    const cached = searchQueryGenCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < LIMITS.SEARCH_QUERY_CACHE_TTL) {
+      log("Using cached generated search query:", cached.query);
+      return cached.query;
+    }
+
+    const priorMessages = (apiHistory || []).slice(0, -1).slice(-LIMITS.SEARCH_QUERY_CONTEXT_MESSAGES);
+    const transcript = formatTranscriptForSearchQuery(priorMessages);
+
+    const prompt = [
+      {
+        role: "system",
+        content:
+          "You write concise web search queries for a search engine. " +
+          "Use the conversation context to resolve pronouns and follow-ups (e.g. \"du coup\", \"that\", \"it\"). " +
+          "Include proper nouns, technical terms, and disambiguation. " +
+          "Prefer keywords over full sentences. Match the user's language when it helps results. " +
+          "Reply with ONLY the search query — no quotes, no explanation, no markdown."
+      },
+      {
+        role: "user",
+        content: transcript
+          ? `Conversation so far:\n${transcript}\n\nLatest user message:\n${userQuery}\n\nSearch query:`
+          : `User message:\n${userQuery}\n\nSearch query:`
+      }
+    ];
+
+    try {
+      const raw = await withLlmStepTimeout(
+        (sig) =>
+          completeChatNonStreaming(prompt, sig, {
+            maxTokens: 80,
+            temperature: 0
+          }),
+        LIMITS.SEARCH_QUERY_GEN_TIMEOUT_MS,
+        signal
+      );
+      const query = sanitizeSearchQuery(raw);
+      if (!query) {
+        throw new Error("empty search query from model");
+      }
+      log("Generated search query:", query, transcript ? "(with context)" : "(no prior context)");
+      cacheSearchQueryGen(cacheKey, query);
+      lastSessionSearchQuery = query;
+      return query;
+    } catch (err) {
+      if (err.name === "AbortError") {
+        throw err;
+      }
+      logWarn("Search query generation failed, using fallback:", err.message, "→", fallback);
+      return fallback;
+    }
+  }
+
   /**
    * Heuristic: queries that look like lookups (specific person, thing, etc.)
    * The classifier often returns ANSWER for these, but the model then says it doesn't know.
@@ -1476,8 +1681,9 @@
    * LLM-based web search classification
    * Asks the model itself whether the question is within its knowledge scope.
    * If not, triggers a web search. This replaces pure heuristic detection.
+   * @param {Array<{role: string, content: string}>} [apiHistory] - For follow-up context in classifier
    */
-  async function queryNeedsWebSearchLLM(query, isFollowUp = false, signal = null) {
+  async function queryNeedsWebSearchLLM(query, isFollowUp = false, signal = null, apiHistory = null) {
     // Heuristic override: "Qui est X", "Who is X", etc. often get ANSWER but the model then says it doesn't know
     if (looksLikeLookupQuery(query)) {
       log('Lookup-style query, forcing web search:', query);
@@ -1490,6 +1696,16 @@
     const followUpHint = isFollowUp
       ? `\n\nThis may be a follow-up in an ongoing chat (short wording is normal). If it needs current events, recent data, verification, or anything time-sensitive or niche, reply SEARCH. Do not assume earlier messages already gave enough web context for this turn.`
       : "";
+
+    let userContent = query;
+    if (isFollowUp && apiHistory && apiHistory.length > 1) {
+      const snippet = formatTranscriptForSearchQuery(
+        apiHistory.slice(0, -1).slice(-4)
+      );
+      if (snippet) {
+        userContent = `Recent conversation:\n${snippet}\n\nLatest message:\n${query}`;
+      }
+    }
 
     const classificationPrompt = [
       {
@@ -1504,62 +1720,32 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       },
       {
         role: "user",
-        content: query
+        content: userContent
       }
     ];
 
     try {
-      let responseText = "";
-
-      if (currentProvider.name === "Ollama") {
-        // Ollama native API (non-streaming)
-        const response = await fetchWithRetry(currentProvider.baseUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: currentProvider.model,
-            messages: classificationPrompt,
-            stream: false
-          })
-        }, signal);
-        const json = await response.json();
-        responseText = (json.message?.content || "").trim().toUpperCase();
-      } else {
-        // OpenAI-compatible API (non-streaming)
-        const base = currentProvider.baseUrl.replace(/\/+$/, "");
-        let url = base.endsWith('/chat/completions')
-          ? base
-          : base + "/chat/completions";
-        const isGemini = currentProvider.name === "Gemini";
-        if (isGemini && currentProvider.apiKey) {
-          url += (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(currentProvider.apiKey);
-        }
-        const headers = { "Content-Type": "application/json", "Authorization": `Bearer ${currentProvider.apiKey}` };
-        const response = await fetchWithRetry(url, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            model: currentProvider.model,
-            messages: classificationPrompt,
-            stream: false,
-            max_tokens: 5,
+      const responseText = await withLlmStepTimeout(
+        (sig) =>
+          completeChatNonStreaming(classificationPrompt, sig, {
+            maxTokens: 5,
             temperature: 0
-          })
-        }, signal);
-        const json = await response.json();
-        responseText = (json.choices?.[0]?.message?.content || "").trim().toUpperCase();
-      }
+          }),
+        LIMITS.SEARCH_CLASSIFIER_TIMEOUT_MS,
+        signal
+      );
 
       log('Model classification response:', responseText);
 
-      // The model replied SEARCH or ANSWER
-      const needsSearch = responseText.includes("SEARCH");
+      const needsSearch = responseText.trim().toUpperCase().includes("SEARCH");
       log('Model decided:', needsSearch ? 'needs web search' : 'can answer from knowledge');
       return needsSearch;
 
     } catch (err) {
+      if (err.name === "AbortError") {
+        throw err;
+      }
       // If classification fails (timeout, network error, etc.), fall back to no search
-      // so the model still answers from its own knowledge
       logWarn('Classification request failed, defaulting to no search:', err.message);
       return false;
     }
@@ -4018,30 +4204,52 @@ Provide a direct, informative answer with citations:`;
       // Ask the LLM itself whether the query is within its knowledge scope
       let needsSearch = false;
       let searchQuery = query;
+      let searchQueryFromExplicit = false;
       if (isWebSearchEnabled() && supportsWebSearch) {
         const isFollowUp = apiHistory.length > 1;
 
-        // Follow-up where user explicitly asks to search: run a real search for this turn (not classifier).
+        // Follow-up where user explicitly asks to search: skip classifier; query may still be refined below
         if (isFollowUp && isExplicitSearchRequest(query)) {
           const resolved = resolveExplicitFollowUpSearchQuery(query);
           if (resolved.length > 0) {
             needsSearch = true;
             searchQuery = resolved;
-            log('Explicit search request on follow-up, search query:', searchQuery);
+            searchQueryFromExplicit = true;
+            log("Explicit search request on follow-up, initial query:", searchQuery);
           }
         }
 
         if (!needsSearch) {
-          titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Evaluating...</span>';
-          needsSearch = await queryNeedsWebSearchLLM(query, isFollowUp, signal);
+          titleElement.innerHTML =
+            '<span class="llm-status-line"><span class="llm-search-spinner"></span> Evaluating...</span>';
+          needsSearch = await queryNeedsWebSearchLLM(query, isFollowUp, signal, apiHistory);
         }
       }
 
       if (needsSearch) {
-        // Show searching status with spinner
-        titleElement.innerHTML = '<span class="llm-status-line"><span class="llm-search-spinner"></span> Searching...</span>';
+        if (!searchQueryFromExplicit) {
+          titleElement.innerHTML =
+            '<span class="llm-status-line"><span class="llm-search-spinner"></span> Planning search...</span>';
+          searchQuery = await generateWebSearchQueryLLM(query, apiHistory, signal);
+        } else if (isContextAwareSearchQueryEnabled()) {
+          titleElement.innerHTML =
+            '<span class="llm-status-line"><span class="llm-search-spinner"></span> Planning search...</span>';
+          const refined = await generateWebSearchQueryLLM(query, apiHistory, signal);
+          if (refined) {
+            searchQuery = refined;
+          }
+        }
 
-        log('Web search triggered for query:', searchQuery);
+        const previousSearchQuery = lastSessionSearchQuery;
+        lastSessionSearchQuery = searchQuery;
+        if (searchQuery === previousSearchQuery && previousSearchQuery) {
+          log("Search query unchanged from previous turn, reusing cached web results if available");
+        }
+
+        titleElement.innerHTML =
+          '<span class="llm-status-line"><span class="llm-search-spinner"></span> Searching...</span>';
+
+        log("Web search triggered for query:", searchQuery);
         const startTime = Date.now();
         const searchResults = await searchWeb(searchQuery, LIMITS.MAX_SEARCH_RESULTS, providerKey);
         
