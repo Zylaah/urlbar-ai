@@ -312,8 +312,14 @@
             .map(repairLegacyStoredSession);
           sessions.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
           db.close();
+          // Collapse copies left behind by older builds (and clean them out of the store)
+          const { kept, duplicateIds } = dedupeProviderSessions(sessions);
+          if (duplicateIds.length) {
+            log("Removing", duplicateIds.length, "duplicate history sessions for provider:", providerKey);
+            Promise.all(duplicateIds.map((id) => deleteSessionById(id).catch(() => {}))).catch(() => {});
+          }
           log("Loaded LLM history from IndexedDB");
-          resolve(sessions);
+          resolve(kept);
         };
         req.onerror = () => {
           db.close();
@@ -483,6 +489,71 @@
     return conversationHistory.map(cloneHistoryEntry);
   }
 
+  /** Stable identity of a message list, used to detect duplicate / continued sessions */
+  function messagesFingerprint(messages) {
+    if (!Array.isArray(messages)) {
+      return "";
+    }
+    return messages
+      .filter((m) => m && m.content)
+      .map((m) => `${m.role}\u0001${(m.content || "").trim()}`)
+      .join("\u0000");
+  }
+
+  /** True when `shorterFp` is the same conversation as `longerFp`, or an earlier state of it */
+  function isSameOrEarlierConversation(shorterFp, longerFp) {
+    if (!shorterFp || !longerFp) {
+      return false;
+    }
+    return shorterFp === longerFp || longerFp.startsWith(shorterFp + "\u0000");
+  }
+
+  /**
+   * Find a stored session that this conversation already belongs to (identical messages,
+   * or the same conversation before the latest turns were appended).
+   * @returns {Promise<string|null>} session id to update, or null to create a new one
+   */
+  async function findExistingSessionIdForMessages(providerKey, messages) {
+    if (!providerKey || !messages || !messages.length) {
+      return null;
+    }
+    let sessions;
+    try {
+      sessions = await getProviderSessions(providerKey);
+    } catch (e) {
+      logWarn("Could not look up existing sessions for dedupe:", e);
+      return null;
+    }
+    const fp = messagesFingerprint(messages);
+    for (const session of sessions) {
+      if (isSameOrEarlierConversation(messagesFingerprint(session.messages), fp)) {
+        return session.id;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Collapse sessions that are duplicates of, or earlier states of, a newer session.
+   * Returns the sessions to display plus the ids of the redundant ones.
+   */
+  function dedupeProviderSessions(sessions) {
+    const kept = [];
+    const duplicateIds = [];
+    // `sessions` is newest first, so a later (older) session that is a prefix of an
+    // already kept one is the leftover copy created before the session id was reused.
+    for (const session of sessions) {
+      const fp = messagesFingerprint(session.messages);
+      const supersededBy = kept.find((k) => isSameOrEarlierConversation(fp, messagesFingerprint(k.messages)));
+      if (supersededBy && fp) {
+        duplicateIds.push(session.id);
+        continue;
+      }
+      kept.push(session);
+    }
+    return { kept, duplicateIds };
+  }
+
   /**
    * Repair sessions saved before stream lifecycle was fixed (duplicate assistant after user).
    */
@@ -581,22 +652,45 @@
     }
   }
 
+  /**
+   * Stash the live conversation together with the stored session id it belongs to.
+   * Keeping the id is what prevents a restored conversation from being written back
+   * to history as a brand new (duplicate) session on the next save.
+   */
   function stashLiveConversation(providerKey) {
     if (!providerKey || !conversationHistory.length) {
       return;
     }
-    liveConversationsByProvider[providerKey] = snapshotConversationHistory();
-    log("Stashed live conversation for provider:", providerKey, "messages:", conversationHistory.length);
+    liveConversationsByProvider[providerKey] = {
+      messages: snapshotConversationHistory(),
+      sessionId: currentSessionId
+    };
+    log("Stashed live conversation for provider:", providerKey, "messages:", conversationHistory.length, "sessionId:", currentSessionId);
+  }
+
+  /** Normalize legacy stash format (plain message array) to `{ messages, sessionId }` */
+  function getStashedLiveConversation(providerKey) {
+    const stored = liveConversationsByProvider[providerKey];
+    if (!stored) {
+      return null;
+    }
+    if (Array.isArray(stored)) {
+      return { messages: stored, sessionId: null };
+    }
+    return stored;
   }
 
   function restoreLiveConversation(providerKey) {
-    const stored = liveConversationsByProvider[providerKey];
-    if (!stored || !stored.length) {
+    const stored = getStashedLiveConversation(providerKey);
+    if (!stored || !stored.messages || !stored.messages.length) {
       return false;
     }
-    conversationHistory = stored.map(cloneHistoryEntry);
+    conversationHistory = stored.messages.map(cloneHistoryEntry);
+    // Reuse the session this conversation was already saved under, so re-entering
+    // LLM mode and continuing updates that session instead of forking a copy.
+    currentSessionId = stored.sessionId || null;
     renderConversationFromHistory();
-    log("Restored live conversation for provider:", providerKey, "messages:", conversationHistory.length);
+    log("Restored live conversation for provider:", providerKey, "messages:", conversationHistory.length, "sessionId:", currentSessionId);
     return true;
   }
 
@@ -937,15 +1031,45 @@
     };
   }
 
-  function maybeSaveConversationToHistory(urlbar) {
+  /**
+   * Persist the current conversation. When no session id is known (e.g. the conversation
+   * was restored after leaving and re-entering LLM mode), reuse the stored session this
+   * conversation already belongs to instead of writing a duplicate.
+   * @returns {Promise<string|null>} the session id it was saved under
+   */
+  async function maybeSaveConversationToHistory(urlbar) {
     const session = buildSessionFromConversation(urlbar);
     if (!session) {
       log("History not saved: no session built from conversation");
-      return;
+      return null;
     }
-    putSession(session);
-    // So the next save (e.g. on deactivate) updates this session instead of adding a duplicate
-    currentSessionId = session.id;
+
+    const fingerprintAtCall = messagesFingerprint(session.messages);
+
+    if (!currentSessionId) {
+      const existingId = await findExistingSessionIdForMessages(session.providerKey, session.messages);
+      if (existingId) {
+        session.id = existingId;
+        session.createdAt = undefined; // putSession keeps the stored createdAt
+        log("Reusing existing history session instead of creating a duplicate:", existingId);
+      }
+    }
+
+    // Only adopt the id if the live conversation is still this one; a deactivate or a
+    // history switch may have happened while the lookup above was pending.
+    if (isSameOrEarlierConversation(fingerprintAtCall, messagesFingerprint(conversationHistory))) {
+      currentSessionId = session.id;
+    }
+
+    // Keep any stashed copy pointing at the same session, so restoring it later updates it.
+    const stash = getStashedLiveConversation(session.providerKey);
+    if (stash && isSameOrEarlierConversation(fingerprintAtCall, messagesFingerprint(stash.messages))) {
+      stash.sessionId = session.id;
+      liveConversationsByProvider[session.providerKey] = stash;
+    }
+
+    await putSession(session);
+    return session.id;
   }
 
   function renderUserMessageFromHistory(message) {
@@ -1909,6 +2033,12 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
             currentSessionId = null;
             conversationHistory = [];
             resetConversationContextSummary();
+            // Drop the stashed live conversation too: this is a brand new conversation,
+            // and a leftover stash would later be restored and re-saved as a copy.
+            const activeProviderKey = urlbar.getAttribute("llm-provider");
+            if (activeProviderKey) {
+              delete liveConversationsByProvider[activeProviderKey];
+            }
           }
 
           // Add user message to conversation
@@ -3703,7 +3833,7 @@ Provide a direct, informative answer with citations:`;
 
   function deactivateLLMMode(urlbar, urlbarInput, restoreURL = false) {
     // Persist the current conversation (if any) before clearing state
-    maybeSaveConversationToHistory(urlbar);
+    maybeSaveConversationToHistory(urlbar).catch((e) => logWarn("History save failed:", e));
 
     const providerKey = urlbar.getAttribute("llm-provider");
     stashLiveConversation(providerKey);
@@ -4345,7 +4475,7 @@ Provide a direct, informative answer with citations:`;
       setTimeout(runCitationInject, LIMITS.RENDER_DEBOUNCE + 80);
 
       // Persist conversation after each assistant response (and on deactivate)
-      maybeSaveConversationToHistory(urlbar);
+      maybeSaveConversationToHistory(urlbar).catch((e) => logWarn("History save failed:", e));
       const activeProviderKey = urlbar.getAttribute("llm-provider");
       stashLiveConversation(activeProviderKey);
 
