@@ -1890,7 +1890,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       // Load API keys
       if (key !== "ollama") {
         const prefKey = `extension.urlbar-llm.${key}-api-key`;
-        provider.apiKey = getPref(prefKey, "");
+        provider.apiKey = (getPref(prefKey, "") || "").trim();
       }
       
       // Load models
@@ -1944,21 +1944,34 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     return `${base}/models`;
   }
 
-  async function fetchJsonOnce(url, options, timeoutMs) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const response = await fetch(url, { ...options, signal: controller.signal });
-      if (!response.ok) {
-        const errorText = await response.text().catch(() => "");
-        throw new Error(
-          `API error: ${response.status} ${response.statusText}${errorText ? " — " + errorText.slice(0, 200) : ""}`
+  function fetchJsonOnce(url, options = {}, timeoutMs = LIMITS.MODELS_FETCH_TIMEOUT) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.timeout = timeoutMs;
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText || "{}"));
+          } catch (e) {
+            reject(new Error(`Invalid JSON from model list: ${e.message}`));
+          }
+          return;
+        }
+        reject(
+          new Error(
+            `API error: ${xhr.status} ${xhr.statusText}${xhr.responseText ? " — " + String(xhr.responseText).slice(0, 200) : ""}`
+          )
         );
+      };
+      xhr.onerror = () => reject(new Error(`Network error listing models: ${url}`));
+      xhr.ontimeout = () => reject(new Error(`Timeout listing models: ${url}`));
+      xhr.open(options.method || "GET", url, true);
+      const headers = options.headers || {};
+      for (const [name, value] of Object.entries(headers)) {
+        xhr.setRequestHeader(name, value);
       }
-      return await response.json();
-    } finally {
-      clearTimeout(timer);
-    }
+      xhr.send(options.body || null);
+    });
   }
 
   function normalizeModelId(id) {
@@ -2024,6 +2037,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       return [];
     }
     if (providerKey !== "ollama" && !provider.apiKey) {
+      logWarn(`Skipping ${providerKey} model list: no API key`);
       return [];
     }
 
@@ -2094,17 +2108,54 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     return item;
   }
 
+  function getMenuPopup(menulist) {
+    if (!menulist) {
+      return null;
+    }
+    return (
+      menulist.menupopup ||
+      menulist.getElementsByTagName("menupopup")[0] ||
+      menulist.querySelector("menupopup") ||
+      [...menulist.children].find((child) => child.localName === "menupopup") ||
+      null
+    );
+  }
+
+  function findModelMenulist(doc, providerKey) {
+    const pref = PROVIDER_MODEL_PREFS[providerKey];
+    if (!doc || !pref) {
+      return null;
+    }
+
+    const asMenulist = (el) => {
+      if (!el) {
+        return null;
+      }
+      if (el.localName === "menulist") {
+        return el;
+      }
+      return el.getElementsByTagName("menulist")[0] || el.querySelector("menulist") || null;
+    };
+
+    return (
+      asMenulist(doc.getElementById(`${pref}-popup-menulist`)) ||
+      asMenulist(doc.getElementById(pref.replaceAll(".", "-"))) ||
+      asMenulist(doc.querySelector(`[tooltiptext="${pref}"]`))
+    );
+  }
+
   function populateModelMenulist(doc, providerKey, models) {
     if (!doc || !models.length) {
       return false;
     }
     const pref = PROVIDER_MODEL_PREFS[providerKey];
-    const menulist = doc.getElementById(`${pref}-popup-menulist`);
+    const menulist = findModelMenulist(doc, providerKey);
     if (!menulist) {
       return false;
     }
-    const popup = menulist.querySelector("menupopup");
+    const popup = getMenuPopup(menulist);
     if (!popup) {
+      logWarn(`Found ${providerKey} model control but no menupopup to fill`);
       return false;
     }
 
@@ -2116,20 +2167,29 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     }
 
     const stamp = items.map((m) => m.value).join("\n");
-    if (menulist.getAttribute("data-llm-models-stamp") === stamp && menulist.value === saved) {
+    const currentValue = menulist.getAttribute("value") || menulist.value;
+    if (menulist.getAttribute("data-llm-models-stamp") === stamp && currentValue === saved) {
       return true;
     }
 
     for (const child of [...popup.children]) {
-      if (child.getAttribute("value") !== "none") {
+      const value = child.getAttribute("value");
+      if (value !== "none" && value !== "") {
         child.remove();
       }
     }
+    const ownerDoc = popup.ownerDocument || doc;
     for (const model of items) {
-      popup.appendChild(createXulMenuItem(doc, model.value, model.label));
+      popup.appendChild(createXulMenuItem(ownerDoc, model.value, model.label));
     }
-    if (saved) {
-      menulist.value = saved;
+
+    const selected = items.find((m) => m.value === saved) || items[0];
+    if (selected) {
+      menulist.setAttribute("value", selected.value);
+      menulist.setAttribute("label", selected.label);
+      try {
+        menulist.value = selected.value;
+      } catch (e) { /* some XUL menulists only use attributes */ }
     }
     menulist.setAttribute("data-llm-models-stamp", stamp);
     log(`Filled ${providerKey} model dropdown with ${items.length} models`);
@@ -2148,32 +2208,60 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     );
   }
 
+  function isSettingsDocument(doc) {
+    if (!doc) {
+      return false;
+    }
+    try {
+      const uri = doc.documentURI || doc.location?.href || "";
+      if (uri.startsWith("about:preferences") || /preferences\.xhtml/i.test(uri)) {
+        return true;
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      return !!(
+        doc.getElementById("sineModsList") ||
+        doc.getElementById("zenThemeMarketplaceList") ||
+        doc.getElementById("sineInstalledGroup") ||
+        doc.querySelector("[data-category='paneSineMods']")
+      );
+    } catch (e) {
+      return false;
+    }
+  }
+
   function collectPreferencesDocumentsFromWindow(win) {
     const docs = [];
+    const seen = new Set();
+    const add = (doc) => {
+      if (doc && !seen.has(doc)) {
+        seen.add(doc);
+        docs.push(doc);
+      }
+    };
     if (!win) {
       return docs;
     }
     try {
-      const href = win.location?.href || "";
-      if (href.startsWith("about:preferences") || /preferences/i.test(href)) {
-        if (win.document) {
-          docs.push(win.document);
-        }
-      }
+      add(win.document);
     } catch (e) { /* ignore */ }
     try {
       const browsers = win.gBrowser?.browsers || [];
       for (const browser of browsers) {
-        const spec = browser.currentURI?.spec || "";
-        if (spec.startsWith("about:preferences")) {
-          const doc = browser.contentDocument;
-          if (doc) {
-            docs.push(doc);
+        try {
+          const spec = browser.currentURI?.spec || "";
+          if (spec.startsWith("about:preferences") || /preferences|settings/i.test(spec)) {
+            add(browser.contentDocument);
+            add(browser.contentWindow?.document);
           }
-        }
+        } catch (e) { /* ignore */ }
       }
     } catch (e) { /* ignore */ }
-    return docs;
+    return docs.filter(
+      (doc) =>
+        isSettingsDocument(doc) ||
+        Object.keys(PROVIDER_MODEL_PREFS).some((key) => findModelMenulist(doc, key))
+    );
   }
 
   function collectAllPreferencesDocuments() {
@@ -2218,7 +2306,14 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       }, 150);
     };
     scheduleFill();
-    const root = doc.getElementById("zenThemeMarketplaceList") || doc.documentElement;
+    setTimeout(scheduleFill, 500);
+    setTimeout(scheduleFill, 1500);
+    const root =
+      doc.getElementById("sineModsList") ||
+      doc.getElementById("sineInstalledGroup") ||
+      doc.getElementById("zenThemeMarketplaceList") ||
+      doc.getElementById("mainPrefPane") ||
+      doc.documentElement;
     if (!root) {
       return;
     }
@@ -2227,6 +2322,14 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
   }
 
   function tryAttachPreferencesFromWindow(win) {
+    if (!win) {
+      return;
+    }
+    try {
+      if (isSettingsDocument(win.document)) {
+        watchPreferencesDocument(win.document);
+      }
+    } catch (e) { /* ignore */ }
     for (const doc of collectPreferencesDocumentsFromWindow(win)) {
       watchPreferencesDocument(doc);
     }
@@ -2243,7 +2346,11 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     for (const key of keys) {
       providerModelCache.delete(key);
     }
+    scanOpenPreferencesDocuments();
     const docs = collectAllPreferencesDocuments();
+    if (!docs.length) {
+      logWarn("No settings document found to fill model dropdowns");
+    }
     await Promise.all(docs.map((doc) => fillModelDropdownsInDocument(doc)));
   }
 
@@ -2251,8 +2358,11 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     if (!name || typeof name !== "string") {
       return null;
     }
+    const relative = name.startsWith("extension.urlbar-llm.")
+      ? name.slice("extension.urlbar-llm.".length)
+      : name;
     for (const key of Object.keys(PROVIDER_MODEL_PREFS)) {
-      if (name.includes(`.${key}-`)) {
+      if (relative.startsWith(`${key}-`) || name.includes(`.${key}-`)) {
         return key;
       }
     }
@@ -2270,12 +2380,12 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
         if (topic !== "nsPref:changed") {
           return;
         }
-        if (data.endsWith("-model")) {
+        const name = String(data || "");
+        if (name.endsWith("-model") || name.includes("-model")) {
           loadConfig();
-          return;
         }
-        if (data.endsWith("-api-key") || data === "extension.urlbar-llm.ollama-base-url") {
-          const key = data.endsWith("-base-url") ? "ollama" : providerKeyFromPrefName(data);
+        if (name.endsWith("-api-key") && !name.includes("web-search") || name.endsWith("ollama-base-url")) {
+          const key = name.endsWith("ollama-base-url") ? "ollama" : providerKeyFromPrefName(name);
           refreshAndPopulateAllModelDropdowns(key ? [key] : null).catch((e) => {
             logWarn("Failed to refresh model lists after pref change:", e.message);
           });
@@ -2300,14 +2410,16 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
           }
           const attach = () => {
             try {
-              const doc = browser.contentDocument;
+              const doc = browser.contentDocument || browser.contentWindow?.document;
               if (doc) {
                 watchPreferencesDocument(doc);
               }
             } catch (e) { /* ignore */ }
           };
           setTimeout(attach, 200);
+          setTimeout(attach, 800);
           try {
+            browser.addEventListener("DOMContentLoaded", attach, true);
             browser.addEventListener("load", attach, true);
           } catch (e) { /* ignore */ }
         }
@@ -2337,6 +2449,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
               domWindow.addEventListener("load", onLoad, { once: true });
             }
           } catch (e) { /* ignore */ }
+          setTimeout(onLoad, 500);
         },
         onCloseWindow() {},
         onWindowTitleChange() {}
@@ -2346,9 +2459,33 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
       logWarn("Could not watch preferences windows:", e.message);
     }
 
+    try {
+      const observerService = Components.classes["@mozilla.org/observer-service;1"]
+        .getService(Components.interfaces.nsIObserverService);
+      observerService.addObserver(
+        {
+          observe(subject) {
+            const win = subject?.defaultView || subject;
+            const attach = () => tryAttachPreferencesFromWindow(win);
+            try {
+              win.addEventListener("load", attach, { once: true });
+            } catch (e) { /* ignore */ }
+            setTimeout(attach, 300);
+            setTimeout(attach, 1200);
+          }
+        },
+        "chrome-document-global-created",
+        false
+      );
+    } catch (e) {
+      logWarn("Could not observe chrome document creation:", e.message);
+    }
+
     scanOpenPreferencesDocuments();
     Object.keys(PROVIDER_MODEL_PREFS).forEach((key) => {
-      getProviderModels(key).catch(() => {});
+      getProviderModels(key).catch((e) => {
+        logWarn(`Could not prefetch ${key} models:`, e.message);
+      });
     });
   }
 
