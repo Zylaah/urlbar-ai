@@ -26,10 +26,71 @@
     "chrome": "urlbar-llm.css"
   },
   "scripts": {
+    "modules/urlbar-llm/urlbar-llm-prefs.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 1
+    },
+    "modules/urlbar-llm/urlbar-llm-store.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 2
+    },
+    "modules/urlbar-llm/urlbar-llm-http.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 3
+    },
+    "modules/urlbar-llm/urlbar-llm-history-store.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 4
+    },
+    "modules/urlbar-llm/urlbar-llm-markdown.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 5
+    },
+    "modules/urlbar-llm/urlbar-llm-session.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 6
+    },
+    "modules/urlbar-llm/urlbar-llm-search.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 7
+    },
+    "modules/urlbar-llm/urlbar-llm-models.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 8
+    },
+    "modules/urlbar-llm/urlbar-llm-history-ui.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 9
+    },
+    "modules/urlbar-llm/urlbar-llm-app.uc.js": {
+      "include": [
+        "chrome://browser/content/browser.xhtml"
+      ],
+      "loadOrder": 10
+    },
     "urlbar-llm.uc.js": {
       "include": [
         "chrome://browser/content/browser.xhtml"
-      ]
+      ],
+      "loadOrder": 11
     }
   },
   "readme": "https://raw.githubusercontent.com/Zylaah/urlbar-ai/main/README.md",
