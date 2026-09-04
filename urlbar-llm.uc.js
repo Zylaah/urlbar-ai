@@ -55,6 +55,10 @@
     SEARCH_QUERY_CACHE_TTL: 5 * 60 * 1000,
     SEARCH_QUERY_CONTEXT_INPUT_MAX: 800, // Max chars per message in query-gen context
     SEARCH_QUERY_CONTEXT_MESSAGES: 6,    // Recent turns fed to query generator
+    /** Provider model catalog (Zen Mods dropdowns) */
+    MODELS_CACHE_TTL: 5 * 60 * 1000,     // Reuse listed models for 5 minutes
+    MODELS_FETCH_TIMEOUT: 8000,          // Per-request timeout when listing models
+    MODELS_MAX_PAGES: 10,                // Safety cap for paginated list endpoints
   };
 
   const CONTEXT_SUMMARY_HEADER =
@@ -1907,6 +1911,447 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     );
   }
 
+  const PROVIDER_MODEL_PREFS = {
+    mistral: "extension.urlbar-llm.mistral-model",
+    openai: "extension.urlbar-llm.openai-model",
+    gemini: "extension.urlbar-llm.gemini-model",
+    ollama: "extension.urlbar-llm.ollama-model"
+  };
+
+  /** @type {Map<string, { models: Array<{value: string, label: string}>, fetchedAt: number }>} */
+  const providerModelCache = new Map();
+  const watchedPreferencesDocuments = new WeakSet();
+
+  function getWindowMediator() {
+    return Components.classes["@mozilla.org/appshell/window-mediator;1"]
+      .getService(Components.interfaces.nsIWindowMediator);
+  }
+
+  function getModelsListUrl(providerKey) {
+    const provider = CONFIG.providers[providerKey];
+    if (providerKey === "ollama") {
+      try {
+        const u = new URL(provider.baseUrl);
+        return `${u.protocol}//${u.host}/api/tags`;
+      } catch (e) {
+        return "http://localhost:11434/api/tags";
+      }
+    }
+    const base = String(provider.baseUrl || "").replace(/\/+$/, "");
+    if (base.endsWith("/chat/completions")) {
+      return base.slice(0, -"/chat/completions".length) + "/models";
+    }
+    return `${base}/models`;
+  }
+
+  async function fetchJsonOnce(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => "");
+        throw new Error(
+          `API error: ${response.status} ${response.statusText}${errorText ? " — " + errorText.slice(0, 200) : ""}`
+        );
+      }
+      return await response.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function normalizeModelId(id) {
+    if (!id || typeof id !== "string") {
+      return "";
+    }
+    return id.replace(/^models\//, "").replace(/^publishers\/[^/]+\/models\//, "");
+  }
+
+  function normalizeModelRows(rows) {
+    const seen = new Set();
+    const out = [];
+    for (const row of rows || []) {
+      const id = normalizeModelId(row.id || row.name || "");
+      if (!id || seen.has(id)) {
+        continue;
+      }
+      seen.add(id);
+      const pretty = String(row.display_name || row.displayName || "").trim();
+      out.push({ value: id, label: pretty && pretty !== id ? pretty : id });
+    }
+    out.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
+    return out;
+  }
+
+  async function fetchOpenAIStyleModelRows(url, headers, timeoutMs) {
+    const all = [];
+    let nextUrl = url;
+    for (let page = 0; page < LIMITS.MODELS_MAX_PAGES && nextUrl; page++) {
+      const data = await fetchJsonOnce(nextUrl, { headers }, timeoutMs);
+      const batch = Array.isArray(data.data) ? data.data : [];
+      all.push(...batch);
+      if (data.has_more && data.last_id) {
+        const u = new URL(url);
+        u.searchParams.set("after", data.last_id);
+        nextUrl = u.toString();
+      } else {
+        nextUrl = null;
+      }
+    }
+    return all;
+  }
+
+  async function fetchGeminiNativeModelRows(apiKey, headers, timeoutMs) {
+    const all = [];
+    const base =
+      "https://generativelanguage.googleapis.com/v1beta/models?pageSize=100&key=" +
+      encodeURIComponent(apiKey);
+    let pageUrl = base;
+    for (let page = 0; page < LIMITS.MODELS_MAX_PAGES && pageUrl; page++) {
+      const data = await fetchJsonOnce(pageUrl, { headers }, timeoutMs);
+      all.push(...(data.models || []));
+      const token = data.nextPageToken;
+      pageUrl = token ? `${base}&pageToken=${encodeURIComponent(token)}` : null;
+    }
+    return all.map((m) => ({ id: m.name, displayName: m.displayName }));
+  }
+
+  async function fetchProviderModels(providerKey) {
+    loadConfig();
+    const provider = CONFIG.providers[providerKey];
+    if (!provider) {
+      return [];
+    }
+    if (providerKey !== "ollama" && !provider.apiKey) {
+      return [];
+    }
+
+    const timeoutMs = LIMITS.MODELS_FETCH_TIMEOUT;
+    const headers = { Accept: "application/json" };
+    if (providerKey !== "ollama" && provider.apiKey) {
+      headers.Authorization = `Bearer ${provider.apiKey}`;
+    }
+
+    if (providerKey === "ollama") {
+      const data = await fetchJsonOnce(getModelsListUrl(providerKey), { headers }, timeoutMs);
+      return normalizeModelRows(
+        (data.models || []).map((m) => ({ id: m.name || m.model }))
+      );
+    }
+
+    let url = getModelsListUrl(providerKey);
+    if (providerKey === "gemini" && provider.apiKey) {
+      url += (url.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(provider.apiKey);
+    }
+
+    try {
+      const rows = await fetchOpenAIStyleModelRows(url, headers, timeoutMs);
+      const models = normalizeModelRows(rows);
+      if (models.length || providerKey !== "gemini") {
+        return models;
+      }
+    } catch (e) {
+      if (providerKey !== "gemini") {
+        throw e;
+      }
+      logWarn("Gemini OpenAI-compatible model list failed, trying native API:", e.message);
+    }
+
+    const rows = await fetchGeminiNativeModelRows(provider.apiKey, headers, timeoutMs);
+    return normalizeModelRows(rows);
+  }
+
+  async function getProviderModels(providerKey) {
+    const cached = providerModelCache.get(providerKey);
+    if (cached && Date.now() - cached.fetchedAt < LIMITS.MODELS_CACHE_TTL) {
+      return cached.models;
+    }
+    try {
+      const models = await fetchProviderModels(providerKey);
+      if (models.length) {
+        providerModelCache.set(providerKey, { models, fetchedAt: Date.now() });
+        return models;
+      }
+    } catch (e) {
+      logWarn(`Could not list ${providerKey} models:`, e.message);
+    }
+    return cached?.models || [];
+  }
+
+  function createXulMenuItem(doc, value, label) {
+    let item;
+    if (typeof doc.createXULElement === "function") {
+      item = doc.createXULElement("menuitem");
+    } else {
+      item = doc.createElementNS(
+        "http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul",
+        "menuitem"
+      );
+    }
+    item.setAttribute("value", value);
+    item.setAttribute("label", label);
+    return item;
+  }
+
+  function populateModelMenulist(doc, providerKey, models) {
+    if (!doc || !models.length) {
+      return false;
+    }
+    const pref = PROVIDER_MODEL_PREFS[providerKey];
+    const menulist = doc.getElementById(`${pref}-popup-menulist`);
+    if (!menulist) {
+      return false;
+    }
+    const popup = menulist.querySelector("menupopup");
+    if (!popup) {
+      return false;
+    }
+
+    const fallback = CONFIG.providers[providerKey]?.model || "";
+    const saved = getPref(pref, fallback);
+    const items = models.slice();
+    if (saved && saved !== "none" && !items.some((m) => m.value === saved)) {
+      items.unshift({ value: saved, label: saved });
+    }
+
+    const stamp = items.map((m) => m.value).join("\n");
+    if (menulist.getAttribute("data-llm-models-stamp") === stamp && menulist.value === saved) {
+      return true;
+    }
+
+    for (const child of [...popup.children]) {
+      if (child.getAttribute("value") !== "none") {
+        child.remove();
+      }
+    }
+    for (const model of items) {
+      popup.appendChild(createXulMenuItem(doc, model.value, model.label));
+    }
+    if (saved) {
+      menulist.value = saved;
+    }
+    menulist.setAttribute("data-llm-models-stamp", stamp);
+    log(`Filled ${providerKey} model dropdown with ${items.length} models`);
+    return true;
+  }
+
+  async function fillModelDropdownsInDocument(doc) {
+    if (!doc) {
+      return;
+    }
+    await Promise.all(
+      Object.keys(PROVIDER_MODEL_PREFS).map(async (providerKey) => {
+        const models = await getProviderModels(providerKey);
+        populateModelMenulist(doc, providerKey, models);
+      })
+    );
+  }
+
+  function collectPreferencesDocumentsFromWindow(win) {
+    const docs = [];
+    if (!win) {
+      return docs;
+    }
+    try {
+      const href = win.location?.href || "";
+      if (href.startsWith("about:preferences") || /preferences/i.test(href)) {
+        if (win.document) {
+          docs.push(win.document);
+        }
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      const browsers = win.gBrowser?.browsers || [];
+      for (const browser of browsers) {
+        const spec = browser.currentURI?.spec || "";
+        if (spec.startsWith("about:preferences")) {
+          const doc = browser.contentDocument;
+          if (doc) {
+            docs.push(doc);
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return docs;
+  }
+
+  function collectAllPreferencesDocuments() {
+    const docs = [];
+    const seen = new Set();
+    const add = (doc) => {
+      if (doc && !seen.has(doc)) {
+        seen.add(doc);
+        docs.push(doc);
+      }
+    };
+    for (const doc of collectPreferencesDocumentsFromWindow(window)) {
+      add(doc);
+    }
+    try {
+      const enumerator = getWindowMediator().getEnumerator(null);
+      while (enumerator.hasMoreElements()) {
+        const win = enumerator.getNext();
+        for (const doc of collectPreferencesDocumentsFromWindow(win)) {
+          add(doc);
+        }
+      }
+    } catch (e) { /* ignore */ }
+    return docs;
+  }
+
+  function watchPreferencesDocument(doc) {
+    if (!doc || watchedPreferencesDocuments.has(doc)) {
+      return;
+    }
+    watchedPreferencesDocuments.add(doc);
+    let fillTimer = null;
+    const scheduleFill = () => {
+      if (fillTimer) {
+        return;
+      }
+      fillTimer = setTimeout(() => {
+        fillTimer = null;
+        fillModelDropdownsInDocument(doc).catch((e) => {
+          logWarn("Failed to fill model dropdowns:", e.message);
+        });
+      }, 150);
+    };
+    scheduleFill();
+    const root = doc.getElementById("zenThemeMarketplaceList") || doc.documentElement;
+    if (!root) {
+      return;
+    }
+    const observer = new MutationObserver(scheduleFill);
+    observer.observe(root, { childList: true, subtree: true });
+  }
+
+  function tryAttachPreferencesFromWindow(win) {
+    for (const doc of collectPreferencesDocumentsFromWindow(win)) {
+      watchPreferencesDocument(doc);
+    }
+  }
+
+  function scanOpenPreferencesDocuments() {
+    for (const doc of collectAllPreferencesDocuments()) {
+      watchPreferencesDocument(doc);
+    }
+  }
+
+  async function refreshAndPopulateAllModelDropdowns(invalidateKeys = null) {
+    const keys = invalidateKeys || Object.keys(PROVIDER_MODEL_PREFS);
+    for (const key of keys) {
+      providerModelCache.delete(key);
+    }
+    const docs = collectAllPreferencesDocuments();
+    await Promise.all(docs.map((doc) => fillModelDropdownsInDocument(doc)));
+  }
+
+  function providerKeyFromPrefName(name) {
+    if (!name || typeof name !== "string") {
+      return null;
+    }
+    for (const key of Object.keys(PROVIDER_MODEL_PREFS)) {
+      if (name.includes(`.${key}-`)) {
+        return key;
+      }
+    }
+    return null;
+  }
+
+  function setupModelListSync() {
+    if (window._urlbarLlmModelListSync) {
+      return;
+    }
+    window._urlbarLlmModelListSync = true;
+
+    const modelPrefObserver = {
+      observe(subject, topic, data) {
+        if (topic !== "nsPref:changed") {
+          return;
+        }
+        if (data.endsWith("-model")) {
+          loadConfig();
+          return;
+        }
+        if (data.endsWith("-api-key") || data === "extension.urlbar-llm.ollama-base-url") {
+          const key = data.endsWith("-base-url") ? "ollama" : providerKeyFromPrefName(data);
+          refreshAndPopulateAllModelDropdowns(key ? [key] : null).catch((e) => {
+            logWarn("Failed to refresh model lists after pref change:", e.message);
+          });
+        }
+      }
+    };
+    try {
+      prefsService.addObserver("extension.urlbar-llm.", modelPrefObserver, false);
+    } catch (e) {
+      logWarn("Could not observe model-list prefs:", e.message);
+    }
+
+    if (window.gBrowser && typeof window.gBrowser.addTabsProgressListener === "function") {
+      window.gBrowser.addTabsProgressListener({
+        onLocationChange(browser, webProgress, request, location) {
+          if (webProgress && !webProgress.isTopLevel) {
+            return;
+          }
+          const spec = location?.spec || browser?.currentURI?.spec || "";
+          if (!spec.startsWith("about:preferences")) {
+            return;
+          }
+          const attach = () => {
+            try {
+              const doc = browser.contentDocument;
+              if (doc) {
+                watchPreferencesDocument(doc);
+              }
+            } catch (e) { /* ignore */ }
+          };
+          setTimeout(attach, 200);
+          try {
+            browser.addEventListener("load", attach, true);
+          } catch (e) { /* ignore */ }
+        }
+      });
+    }
+
+    try {
+      const windowListener = {
+        onOpenWindow(xulWindow) {
+          let domWindow = null;
+          try {
+            domWindow = xulWindow.docShell.domWindow;
+          } catch (e) {
+            try {
+              domWindow = xulWindow
+                .QueryInterface(Components.interfaces.nsIInterfaceRequestor)
+                .getInterface(Components.interfaces.nsIDOMWindow);
+            } catch (e2) {
+              return;
+            }
+          }
+          const onLoad = () => tryAttachPreferencesFromWindow(domWindow);
+          try {
+            if (domWindow.document?.readyState === "complete") {
+              onLoad();
+            } else {
+              domWindow.addEventListener("load", onLoad, { once: true });
+            }
+          } catch (e) { /* ignore */ }
+        },
+        onCloseWindow() {},
+        onWindowTitleChange() {}
+      };
+      getWindowMediator().addListener(windowListener);
+    } catch (e) {
+      logWarn("Could not watch preferences windows:", e.message);
+    }
+
+    scanOpenPreferencesDocuments();
+    Object.keys(PROVIDER_MODEL_PREFS).forEach((key) => {
+      getProviderModels(key).catch(() => {});
+    });
+  }
+
   // Initialize when browser window loads
   function init() {
     // Check if enabled
@@ -1915,6 +2360,7 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
     }
 
     loadConfig();
+    setupModelListSync();
 
     // Migrate from JSON file to IndexedDB on first run
     migrateFromFileIfNeeded().catch(() => {});
@@ -3720,6 +4166,7 @@ Provide a direct, informative answer with citations:`;
   }
 
   function activateLLMMode(urlbar, urlbarInput, providerKey) {
+    loadConfig();
     isLLMMode = true;
     currentProvider = CONFIG.providers[providerKey];
     
@@ -4274,6 +4721,7 @@ Provide a direct, informative answer with citations:`;
   }
 
   async function sendToLLM(urlbar, urlbarInput, query, historyForApi = null) {
+    loadConfig();
     if (!currentProvider || !query.trim()) {
       return;
     }

@@ -32,7 +32,7 @@
     "label": "Mistral Model",
     "type": "dropdown",
     "defaultValue": "mistral-large-2512",
-    "description": "Select the Mistral model to use.",
+    "description": "Mistral models available for your API key. The list is loaded from Mistral when a key is set.",
     "options": [
       {
         "value": "mistral-large-2512",
@@ -77,7 +77,7 @@
     "label": "OpenAI Model",
     "type": "dropdown",
     "defaultValue": "gpt-5.3-chat-latest",
-    "description": "Select the OpenAI model to use.",
+    "description": "OpenAI models available for your API key. The list is loaded from OpenAI when a key is set.",
     "options": [
       {
         "value": "gpt-5.3-chat-latest",
@@ -150,7 +150,7 @@
     "label": "Gemini Model",
     "type": "dropdown",
     "defaultValue": "gemini-3.1-pro-preview",
-    "description": "Select the Gemini model to use.",
+    "description": "Gemini models available for your API key. The list is loaded from Google when a key is set.",
     "options": [
       {
         "value": "gemini-3.1-pro-preview",
@@ -225,10 +225,15 @@
   {
     "property": "extension.urlbar-llm.ollama-model",
     "label": "Ollama Model",
-    "type": "string",
-    "placeholder": "mistral",
+    "type": "dropdown",
     "defaultValue": "mistral",
-    "description": "The Ollama model name to use (e.g., mistral, llama2, codellama).",
+    "description": "Models installed in your local Ollama instance. The list is loaded from Ollama when it is running.",
+    "options": [
+      {
+        "value": "mistral",
+        "label": "mistral"
+      }
+    ],
     "conditions": [
       {
         "if": {
