@@ -183,6 +183,8 @@
 
   // When loading a conversation from history, we keep its session id so on deactivate we update that session instead of creating a new one
   let currentSessionId = null;
+  /** Session ids removed from the history picker; do not restore or write them back. */
+  const deletedSessionIds = new Set();
 
   /** Cached rolling summary: messages [0..conversationContextSummaryEndIndex) are represented in this text */
   let conversationContextSummary = null;
@@ -404,6 +406,24 @@
         tx.onerror = () => { db.close(); reject(tx.error); };
       });
     });
+  }
+
+  function sessionExistsById(id) {
+    if (!id) {
+      return Promise.resolve(false);
+    }
+    return openHistoryDB().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, "readonly");
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const req = store.get(id);
+      let exists = false;
+      req.onsuccess = () => {
+        exists = !!req.result;
+      };
+      req.onerror = () => { db.close(); reject(req.error); };
+      tx.oncomplete = () => { db.close(); resolve(exists); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    }));
   }
 
   /** One-time migration from JSON file if it exists */
@@ -657,6 +677,24 @@
   }
 
   /**
+   * Drop the in-memory live conversation for a provider (stash, session id, rendered thread).
+   * Does not touch the history-list rows; callers hide the panel if needed.
+   */
+  function discardLiveConversation(providerKey) {
+    if (providerKey) {
+      delete liveConversationsByProvider[providerKey];
+    }
+    conversationHistory = [];
+    resetConversationContextSummary();
+    currentSessionId = null;
+    historyIndex = -1;
+    if (conversationContainer && conversationContainer.parentNode) {
+      conversationContainer.remove();
+    }
+    conversationContainer = null;
+  }
+
+  /**
    * Stash the live conversation together with the stored session id it belongs to.
    * Keeping the id is what prevents a restored conversation from being written back
    * to history as a brand new (duplicate) session on the next save.
@@ -689,12 +727,39 @@
     if (!stored || !stored.messages || !stored.messages.length) {
       return false;
     }
+    if (stored.sessionId && deletedSessionIds.has(stored.sessionId)) {
+      delete liveConversationsByProvider[providerKey];
+      return false;
+    }
     conversationHistory = stored.messages.map(cloneHistoryEntry);
     // Reuse the session this conversation was already saved under, so re-entering
     // LLM mode and continuing updates that session instead of forking a copy.
     currentSessionId = stored.sessionId || null;
     renderConversationFromHistory();
     log("Restored live conversation for provider:", providerKey, "messages:", conversationHistory.length, "sessionId:", currentSessionId);
+
+    // If this thread was deleted from history, drop the leftover stash instead of resurrecting it.
+    if (stored.sessionId) {
+      sessionExistsById(stored.sessionId).then((exists) => {
+        if (exists) {
+          return;
+        }
+        if (currentSessionId !== stored.sessionId) {
+          return;
+        }
+        log("Discarding restored conversation; session was deleted:", stored.sessionId);
+        deletedSessionIds.add(stored.sessionId);
+        discardLiveConversation(providerKey);
+        const urlbarInput = document.getElementById("urlbar-input");
+        if (urlbarInput) {
+          urlbarInput.setAttribute("placeholder", "Ask anything...");
+        }
+        const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
+        if (urlbarViewBodyInner && !isShowingHistoryList()) {
+          urlbarViewBodyInner.style.display = "none";
+        }
+      }).catch(() => {});
+    }
     return true;
   }
 
@@ -1050,9 +1115,18 @@
 
     const fingerprintAtCall = messagesFingerprint(session.messages);
 
+    if (deletedSessionIds.has(session.id)) {
+      log("History not saved: session was deleted", session.id);
+      return null;
+    }
+
     if (!currentSessionId) {
       const existingId = await findExistingSessionIdForMessages(session.providerKey, session.messages);
       if (existingId) {
+        if (deletedSessionIds.has(existingId)) {
+          log("History not saved: matching session was deleted", existingId);
+          return null;
+        }
         session.id = existingId;
         session.createdAt = undefined; // putSession keeps the stored createdAt
         log("Reusing existing history session instead of creating a duplicate:", existingId);
@@ -1220,21 +1294,21 @@
     if (!isShowingHistoryList()) {
       return;
     }
+    exitToEmptyLlmConversation(urlbar, urlbarInput);
+    log("Dismissed history list, back to LLM mode");
+  }
+
+  /** Leave the current thread (and history picker) but stay in LLM mode. */
+  function exitToEmptyLlmConversation(urlbar, urlbarInput) {
     removeLlmHistoryRowsFromResults();
-    conversationHistory = [];
-    resetConversationContextSummary();
     const providerKey = urlbar.getAttribute("llm-provider");
-    if (providerKey) {
-      delete liveConversationsByProvider[providerKey];
-    }
-    currentSessionId = null; /* Next question starts a new session */
+    discardLiveConversation(providerKey);
     urlbarInput.setAttribute("placeholder", "Ask anything...");
     const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
     if (urlbarViewBodyInner) {
       urlbarViewBodyInner.style.display = "none";
     }
     urlbarInput.focus();
-    log("Dismissed history list, back to LLM mode");
   }
 
   /**
@@ -1349,8 +1423,14 @@
       }
 
       const targetId = sessions[idx].id;
+      const stash = getStashedLiveConversation(providerKey);
+      const deletedCurrent =
+        currentSessionId === targetId ||
+        (stash && stash.sessionId === targetId);
+
       try {
         await deleteSessionById(targetId);
+        deletedSessionIds.add(targetId);
       } catch (err) {
         logWarn("Failed to delete session:", err);
         return;
@@ -1366,10 +1446,12 @@
 
       log("Deleted history session from provider:", providerKey, "session id:", targetId);
 
+      if (deletedCurrent || !sessions.length) {
+        discardLiveConversation(providerKey);
+      }
+
       if (!sessions.length) {
         removeLlmHistoryRowsFromResults();
-        conversationHistory = [];
-        resetConversationContextSummary();
         urlbarInput.setAttribute("placeholder", "Ask anything...");
         const urlbarViewBodyInner = document.querySelector(".urlbarView-body-inner");
         if (urlbarViewBodyInner) {
@@ -2683,12 +2765,17 @@ When uncertain, prefer SEARCH. Do NOT explain. Just reply with one word.${follow
           return;
         }
         getProviderSessions(providerKey).then((sessions) => {
-          if (!sessions.length) {
-            log("Alt+ArrowUp: no stored sessions for provider:", providerKey);
+          if (sessions.length) {
+            log("Alt+ArrowUp showing history list for provider:", providerKey, "with", sessions.length, "sessions");
+            showHistoryListForProvider(providerKey, urlbar, urlbarInput);
             return;
           }
-          log("Alt+ArrowUp showing history list for provider:", providerKey, "with", sessions.length, "sessions");
-          showHistoryListForProvider(providerKey, urlbar, urlbarInput);
+          if (conversationHistory.length || conversationContainer) {
+            log("Alt+ArrowUp: no stored sessions, leaving current conversation");
+            exitToEmptyLlmConversation(urlbar, urlbarInput);
+            return;
+          }
+          log("Alt+ArrowUp: no stored sessions for provider:", providerKey);
         });
       },
       true
