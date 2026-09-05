@@ -52,6 +52,18 @@
       /** @type {Map<string, { models: Array<{value: string, label: string}>, fetchedAt: number }>} */
       const providerModelCache = new Map();
       const watchedPreferencesDocuments = new WeakSet();
+      const seenWarnings = new Set();
+      const MODELS_FAILURE_CACHE_TTL = 60 * 1000;
+
+      // Model lists are refreshed whenever the settings DOM changes, so an unreachable provider
+      // would otherwise repeat the same warning indefinitely.
+      function logWarnOnce(key, ...args) {
+        if (seenWarnings.has(key)) {
+          return;
+        }
+        seenWarnings.add(key);
+        logWarn(...args);
+      }
 
       function getWindowMediator() {
         return Components.classes["@mozilla.org/appshell/window-mediator;1"]
@@ -167,11 +179,6 @@
         if (!provider) {
           return [];
         }
-        if (providerKey !== "ollama" && !provider.apiKey) {
-          logWarn(`Skipping ${providerKey} model list: no API key`);
-          return [];
-        }
-
         const timeoutMs = LIMITS.MODELS_FETCH_TIMEOUT;
         const headers = { Accept: "application/json" };
         if (providerKey !== "ollama" && provider.apiKey) {
@@ -207,21 +214,42 @@
         return normalizeModelRows(rows);
       }
 
-      async function getProviderModels(providerKey) {
-        const cached = providerModelCache.get(providerKey);
-        if (cached && Date.now() - cached.fetchedAt < LIMITS.MODELS_CACHE_TTL) {
-          return cached.models;
+      function isProviderConfigured(providerKey) {
+        loadConfig();
+        const provider = CONFIG.providers[providerKey];
+        if (!provider) {
+          return false;
         }
+        return providerKey === "ollama" || !!provider.apiKey;
+      }
+
+      async function getProviderModels(providerKey) {
+        if (!isProviderConfigured(providerKey)) {
+          return [];
+        }
+
+        const cached = providerModelCache.get(providerKey);
+        if (cached) {
+          const ttl = cached.models.length ? LIMITS.MODELS_CACHE_TTL : MODELS_FAILURE_CACHE_TTL;
+          if (Date.now() - cached.fetchedAt < ttl) {
+            return cached.models;
+          }
+        }
+
+        let models = [];
         try {
-          const models = await fetchProviderModels(providerKey);
+          models = await fetchProviderModels(providerKey);
           if (models.length) {
-            providerModelCache.set(providerKey, { models, fetchedAt: Date.now() });
-            return models;
+            seenWarnings.delete(`list:${providerKey}`);
           }
         } catch (e) {
-          logWarn(`Could not list ${providerKey} models:`, e.message);
+          logWarnOnce(`list:${providerKey}`, `Could not list ${providerKey} models:`, e.message);
         }
-        return cached?.models || [];
+        if (!models.length && cached?.models.length) {
+          return cached.models;
+        }
+        providerModelCache.set(providerKey, { models, fetchedAt: Date.now() });
+        return models;
       }
 
       function createXulMenuItem(doc, value, label) {
@@ -286,7 +314,10 @@
         }
         const popup = getMenuPopup(menulist);
         if (!popup) {
-          logWarn(`Found ${providerKey} model control but no menupopup to fill`);
+          logWarnOnce(
+            `popup:${providerKey}`,
+            `Found ${providerKey} model control but no menupopup to fill`
+          );
           return false;
         }
 
@@ -432,7 +463,7 @@
           fillTimer = setTimeout(() => {
             fillTimer = null;
             fillModelDropdownsInDocument(doc).catch((e) => {
-              logWarn("Failed to fill model dropdowns:", e.message);
+              logWarnOnce("fill", "Failed to fill model dropdowns:", e.message);
             });
           }, 150);
         };
@@ -476,11 +507,12 @@
         const keys = invalidateKeys || Object.keys(PROVIDER_MODEL_PREFS);
         for (const key of keys) {
           providerModelCache.delete(key);
+          seenWarnings.delete(`list:${key}`);
         }
         scanOpenPreferencesDocuments();
         const docs = collectAllPreferencesDocuments();
         if (!docs.length) {
-          logWarn("No settings document found to fill model dropdowns");
+          logWarnOnce("no-settings-doc", "No settings document found to fill model dropdowns");
         }
         await Promise.all(docs.map((doc) => fillModelDropdownsInDocument(doc)));
       }
@@ -615,7 +647,7 @@
         scanOpenPreferencesDocuments();
         Object.keys(PROVIDER_MODEL_PREFS).forEach((key) => {
           getProviderModels(key).catch((e) => {
-            logWarn(`Could not prefetch ${key} models:`, e.message);
+            logWarnOnce(`prefetch:${key}`, `Could not prefetch ${key} models:`, e.message);
           });
         });
       }
