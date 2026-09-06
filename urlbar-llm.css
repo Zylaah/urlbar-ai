@@ -19,6 +19,8 @@
   color: white !important;
   padding: 4px 8px !important;
   border-radius: 50px !important;
+  corner-shape: round !important;
+  --zen-squircle-value: 1 !important;
   font-size: 14px !important;
   display: inline-block !important;
   --urlbar-basic-component-size: 26px !important;
