@@ -897,6 +897,7 @@
   -moz-appearance: none;
   appearance: none;
   color-scheme: light dark;
+  corner-shape: superellipse(var(--zen-squircle-value)) !important;
 }
 
 .urlbarView-row[data-llm-history-row] > .urlbarView-row-buttons > .urlbarView-button.llm-history-delete-button:hover {
