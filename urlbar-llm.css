@@ -12,6 +12,18 @@
   display: none !important;
 }
 
+/*
+ * Firefox Nova makes #urlbar[open] > .urlbarView display:flex even when it has no
+ * rows. Hiding .urlbarView-body-inner alone then leaves an empty panel in LLM idle
+ * state, so hide the view itself until there is a conversation or history picker.
+ */
+#urlbar[llm-mode-active="true"][open]
+  > .urlbarView:not(:has(.llm-conversation-container)):not(
+    :has(.urlbarView-row[data-llm-history-row])
+  ) {
+  display: none !important;
+}
+
 /* LLM Mode Active - Use native Zen #urlbar-label-box styling */
 #urlbar[llm-mode-active="true"] #urlbar-label-box {
   /* Zen's native pill styling from zen-omnibox.css */
