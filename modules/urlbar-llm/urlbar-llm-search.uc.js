@@ -286,7 +286,8 @@
             (sig) =>
               api.completeChatNonStreaming(prompt, sig, {
                 maxTokens: 80,
-                temperature: 0
+                temperature: 0,
+                disableReasoning: true
               }),
             LIMITS.SEARCH_QUERY_GEN_TIMEOUT_MS,
             signal
@@ -374,8 +375,9 @@
           const responseText = await api.withLlmStepTimeout(
             (sig) =>
               api.completeChatNonStreaming(classificationPrompt, sig, {
-                maxTokens: 5,
-                temperature: 0
+                maxTokens: 32,
+                temperature: 0,
+                disableReasoning: true
               }),
             LIMITS.SEARCH_CLASSIFIER_TIMEOUT_MS,
             signal
@@ -383,17 +385,28 @@
 
           log('Model classification response:', responseText);
 
-          const needsSearch = responseText.trim().toUpperCase().includes("SEARCH");
-          log('Model decided:', needsSearch ? 'needs web search' : 'can answer from knowledge');
-          return needsSearch;
+          const normalized = (responseText || "").trim().toUpperCase();
+          if (!normalized) {
+            log('Classifier returned empty, defaulting to web search');
+            return true;
+          }
+          if (normalized.includes("SEARCH")) {
+            log('Model decided: needs web search');
+            return true;
+          }
+          if (normalized.includes("ANSWER")) {
+            log('Model decided: can answer from knowledge');
+            return false;
+          }
+          log('Classifier reply was neither SEARCH nor ANSWER, defaulting to web search:', responseText);
+          return true;
 
         } catch (err) {
           if (err.name === "AbortError") {
             throw err;
           }
-          // If classification fails (timeout, network error, etc.), fall back to no search
-          logWarn('Classification request failed, defaulting to no search:', err.message);
-          return false;
+          logWarn('Classification request failed, defaulting to web search:', err.message);
+          return true;
         }
       }
 

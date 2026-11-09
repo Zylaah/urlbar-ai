@@ -109,11 +109,54 @@
         });
       }
 
+      function extractTextParts(value) {
+        if (value == null) {
+          return "";
+        }
+        if (typeof value === "string") {
+          return value;
+        }
+        if (Array.isArray(value)) {
+          return value
+            .map((part) => {
+              if (typeof part === "string") {
+                return part;
+              }
+              if (!part || typeof part !== "object") {
+                return "";
+              }
+              return part.text || part.content || part.output_text || "";
+            })
+            .join("");
+        }
+        if (typeof value === "object") {
+          return value.text || value.content || "";
+        }
+        return String(value);
+      }
+
+      /**
+       * OpenRouter/OpenAI-compat often put the reply in reasoning fields or
+       * array content parts; some models leave `message.content` empty.
+       */
+      function extractChatMessageText(json) {
+        const choice = json?.choices?.[0] || {};
+        const msg = choice.message || {};
+        const chunks = [
+          extractTextParts(msg.content),
+          extractTextParts(msg.reasoning_content),
+          extractTextParts(typeof msg.reasoning === "string" ? msg.reasoning : msg.reasoning?.content),
+          extractTextParts(choice.text),
+          extractTextParts(json?.message?.content)
+        ];
+        return chunks.map((s) => String(s || "").trim()).find((s) => s) || "";
+      }
+
       /**
        * Non-streaming chat completion (classification, summarization, etc.).
        * @param {Array<{role: string, content: string}>} messages
        * @param {AbortSignal|null} signal
-       * @param {{ maxTokens?: number, temperature?: number }} [options]
+       * @param {{ maxTokens?: number, temperature?: number, disableReasoning?: boolean }} [options]
        * @returns {Promise<string>}
        */
       async function completeChatNonStreaming(messages, signal = null, options = {}) {
@@ -132,7 +175,7 @@
             })
           }, signal);
           const json = await response.json();
-          return (json.message?.content || "").trim();
+          return extractChatMessageText(json);
         }
 
         const base = state.currentProvider.baseUrl.replace(/\/+$/, "");
@@ -146,19 +189,26 @@
           Authorization: `Bearer ${state.currentProvider.apiKey}`,
           ...(state.currentProvider.extraHeaders || {})
         };
+        const payload = {
+          model: state.currentProvider.model,
+          messages,
+          stream: false,
+          max_tokens: maxTokens,
+          temperature
+        };
+        if (state.currentProvider.name === "OpenRouter") {
+          payload.max_completion_tokens = maxTokens;
+          if (options.disableReasoning) {
+            payload.reasoning = { exclude: true };
+          }
+        }
         const response = await fetchWithRetry(url, {
           method: "POST",
           headers,
-          body: JSON.stringify({
-            model: state.currentProvider.model,
-            messages,
-            stream: false,
-            max_tokens: maxTokens,
-            temperature
-          })
+          body: JSON.stringify(payload)
         }, signal);
         const json = await response.json();
-        return (json.choices?.[0]?.message?.content || "").trim();
+        return extractChatMessageText(json);
       }
 
       /**
