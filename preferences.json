@@ -130,6 +130,59 @@
     ]
   },
   {
+    "property": "extension.urlbar-llm.openrouter-api-key",
+    "label": "OpenRouter API Key",
+    "type": "string",
+    "placeholder": "sk-or-…",
+    "defaultValue": "",
+    "description": "Your API key from openrouter.ai. Required to use OpenRouter models. Type /openrouter then Tab in the urlbar.",
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
+    "property": "extension.urlbar-llm.openrouter-model",
+    "label": "OpenRouter Model",
+    "type": "dropdown",
+    "defaultValue": "openai/gpt-4o-mini",
+    "description": "OpenRouter model slug (e.g. openai/gpt-4o-mini). The list is loaded from OpenRouter when a key is set.",
+    "options": [
+      {
+        "value": "openai/gpt-4o-mini",
+        "label": "OpenAI: GPT-4o Mini"
+      },
+      {
+        "value": "openai/gpt-4o",
+        "label": "OpenAI: GPT-4o"
+      },
+      {
+        "value": "anthropic/claude-sonnet-4",
+        "label": "Anthropic: Claude Sonnet 4"
+      },
+      {
+        "value": "google/gemini-2.5-flash",
+        "label": "Google: Gemini 2.5 Flash"
+      },
+      {
+        "value": "meta-llama/llama-3.3-70b-instruct",
+        "label": "Meta: Llama 3.3 70B"
+      }
+    ],
+    "conditions": [
+      {
+        "if": {
+          "property": "extension.urlbar-llm.enabled",
+          "value": true
+        }
+      }
+    ]
+  },
+  {
     "property": "extension.urlbar-llm.gemini-api-key",
     "label": "Google Gemini API Key",
     "type": "string",
@@ -253,7 +306,7 @@
     "label": "Enable Web Search",
     "type": "checkbox",
     "defaultValue": true,
-    "description": "Automatically search the web for current information when needed. Works with all providers (Mistral, OpenAI, Ollama).",
+    "description": "Automatically search the web for current information when needed. Works with all providers (Mistral, OpenAI, OpenRouter, Gemini, Ollama).",
     "conditions": [
       {
         "if": {

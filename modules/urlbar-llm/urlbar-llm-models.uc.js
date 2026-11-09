@@ -45,6 +45,7 @@
       const PROVIDER_MODEL_PREFS = {
         mistral: "extension.urlbar-llm.mistral-model",
         openai: "extension.urlbar-llm.openai-model",
+        openrouter: "extension.urlbar-llm.openrouter-model",
         gemini: "extension.urlbar-llm.gemini-model",
         ollama: "extension.urlbar-llm.ollama-model"
       };
@@ -133,7 +134,12 @@
             continue;
           }
           seen.add(id);
-          const pretty = String(row.display_name || row.displayName || "").trim();
+          const pretty = String(
+            row.display_name ||
+            row.displayName ||
+            (row.id && row.name && row.name !== row.id ? row.name : "") ||
+            ""
+          ).trim();
           out.push({ value: id, label: pretty && pretty !== id ? pretty : id });
         }
         out.sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base" }));
@@ -183,6 +189,9 @@
         const headers = { Accept: "application/json" };
         if (providerKey !== "ollama" && provider.apiKey) {
           headers.Authorization = `Bearer ${provider.apiKey}`;
+        }
+        if (provider.extraHeaders) {
+          Object.assign(headers, provider.extraHeaders);
         }
 
         if (providerKey === "ollama") {
@@ -524,7 +533,8 @@
         const relative = name.startsWith("extension.urlbar-llm.")
           ? name.slice("extension.urlbar-llm.".length)
           : name;
-        for (const key of Object.keys(PROVIDER_MODEL_PREFS)) {
+        const keys = Object.keys(PROVIDER_MODEL_PREFS).sort((a, b) => b.length - a.length);
+        for (const key of keys) {
           if (relative.startsWith(`${key}-`) || name.includes(`.${key}-`)) {
             return key;
           }

@@ -143,7 +143,8 @@
         }
         const headers = {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${state.currentProvider.apiKey}`
+          Authorization: `Bearer ${state.currentProvider.apiKey}`,
+          ...(state.currentProvider.extraHeaders || {})
         };
         const response = await fetchWithRetry(url, {
           method: "POST",
@@ -211,6 +212,7 @@
         const headers = { "Content-Type": "application/json" };
         if (!isOllama) {
           headers["Authorization"] = `Bearer ${state.currentProvider.apiKey}`;
+          Object.assign(headers, state.currentProvider.extraHeaders || {});
         }
 
         log(`Streaming request — URL: ${url}, Model: ${state.currentProvider.model}, Provider: ${state.currentProvider.name}, Messages: ${messages.length}`);

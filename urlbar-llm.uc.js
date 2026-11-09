@@ -8,7 +8,7 @@
  * URL Bar LLM Integration for Zen Browser
  *
  * Usage:
- * 1. Type "/provider" (e.g., "/mistral", "/openai", "/gemini", "/ollama")
+ * 1. Type "/provider" (e.g., "/mistral", "/openai", "/openrouter", "/gemini", "/ollama")
  * 2. Press Tab to activate LLM mode
  * 3. Type your message
  * 4. Press Enter to send and stream response

@@ -706,7 +706,7 @@
           let searchContext = null;
           let searchResultsForDisplay = null;
           const providerKey = urlbar.getAttribute("llm-provider");
-          const supportsWebSearch = providerKey === 'openai' || providerKey === 'mistral' || providerKey === 'ollama' || providerKey === 'gemini';
+          const supportsWebSearch = !!CONFIG.providers[providerKey];
           
           // Ask the LLM itself whether the query is within its knowledge scope
           let needsSearch = false;

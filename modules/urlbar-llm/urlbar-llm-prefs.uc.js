@@ -78,6 +78,16 @@
         baseUrl: "https://api.openai.com/v1/chat/completions",
         model: "gpt-5.3-chat-latest"
       },
+      openrouter: {
+        name: "OpenRouter",
+        apiKey: "",
+        baseUrl: "https://openrouter.ai/api/v1/chat/completions",
+        model: "openai/gpt-4o-mini",
+        extraHeaders: {
+          "HTTP-Referer": "https://zen-browser.app",
+          "X-Title": "URL Bar LLM (Zen)"
+        }
+      },
       ollama: {
         name: "Ollama",
         apiKey: null, // Not needed for local LLM

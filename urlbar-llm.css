@@ -60,6 +60,11 @@
   box-shadow: 0 0 10px 0 rgba(66, 133, 244, 0.5);
 }
 
+#urlbar[llm-provider="openrouter"] #urlbar-label-box {
+  background: linear-gradient(135deg, #6566f1 0%, #8b5cf6 100%) !important;
+  box-shadow: 0 0 10px 0 rgba(101, 102, 241, 0.5);
+}
+
 /* ============================================
    LLM Mode Glow Animations (Provider-specific)
    Override Zen's default glow with provider colors
@@ -105,6 +110,16 @@
   }
 }
 
+/* OpenRouter - Indigo glow */
+@keyframes llm-urlbar-glow-openrouter {
+  0% {
+    box-shadow: 0 0 20px rgba(101, 102, 241, 0.6);
+  }
+  100% {
+    box-shadow: 0 0 250px rgba(101, 102, 241, 0);
+  }
+}
+
 /* LLM mode glow animation on the provider pill */
 #urlbar[llm-mode-active="true"] #urlbar-label-box {
   position: relative;
@@ -134,6 +149,10 @@
 
 #urlbar[llm-provider="gemini"] #urlbar-label-box[animate-glow="true"]::before {
   animation: llm-urlbar-glow-gemini ease-out 1s forwards;
+}
+
+#urlbar[llm-provider="openrouter"] #urlbar-label-box[animate-glow="true"]::before {
+  animation: llm-urlbar-glow-openrouter ease-out 1s forwards;
 }
 
 /* LLM Result Row Styling - Use native Zen styling */
@@ -273,6 +292,10 @@
   background: #4285f4;
 }
 
+#urlbar[llm-provider="openrouter"] .llm-search-spinner {
+  background: #6566f1;
+}
+
 /* Provider-specific styling (optional) */
 #urlbar[llm-provider="mistral"] {
   /* Mistral-specific styles */
@@ -288,6 +311,10 @@
 
 #urlbar[llm-provider="gemini"] {
   /* Gemini-specific styles */
+}
+
+#urlbar[llm-provider="openrouter"] {
+  /* OpenRouter-specific styles */
 }
 
 /* Hint indicator */
